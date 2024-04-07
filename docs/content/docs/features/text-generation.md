@@ -272,3 +272,88 @@ curl http://localhost:8080/v1/completions -H "Content-Type: application/json" -d
    "temperature": 0.1, "top_p": 0.1
  }'
 ```
+
+### Transformers
+
+[Transformers](https://huggingface.co/docs/transformers/index) is a State-of-the-art Machine Learning library for PyTorch, TensorFlow, and JAX.
+
+LocalAI has a built-in integration with Transformers, and it can be used to run models.
+
+This is an extra backend - in the container images (the `extra` images already contains python dependencies for Transformers) is already available and there is nothing to do for the setup.
+
+#### Setup
+
+Create a YAML file for the model you want to use with `transformers`.
+
+To setup a model, you need to just specify the model name in the YAML config file:
+```yaml
+name: transformers
+backend: transformers
+parameters:
+    model: "facebook/opt-125m"
+type: AutoModelForCausalLM
+quantization: bnb_4bit # One of: bnb_8bit, bnb_4bit, xpu_4bit (optional)
+```
+
+The backend will automatically download the required files in order to run the model.
+
+#### Parameters
+
+##### Type
+
+| Type | Description |
+| --- | --- |
+| `AutoModelForCausalLM` | `AutoModelForCausalLM` is a model that can be used to generate sequences. |
+| `OVModelForCausalLM` | for OpenVINO models |
+| N/A | Defaults to `AutoModel` |
+
+
+##### Quantization
+
+| Quantization | Description |
+| --- | --- |
+| `bnb_8bit` | 8-bit quantization |
+| `bnb_4bit` | 4-bit quantization |
+| `xpu_4bit` | 4-bit quantization for Intel XPUs |
+
+#### Usage
+
+Use the `completions` endpoint by specifying the `transformers` model:
+```
+curl http://localhost:8080/v1/completions -H "Content-Type: application/json" -d '{   
+   "model": "transformers",
+   "prompt": "Hello, my name is",
+   "temperature": 0.1, "top_p": 0.1
+ }'
+```
+
+#### Examples
+
+##### OpenVINO
+
+A model configuration file for openvion and starling model:
+
+```yaml
+name: starling-openvino
+backend: transformers
+parameters:
+  model: fakezeta/Starling-LM-7B-beta-openvino-int8
+context_size: 8192
+threads: 6
+f16: true
+type: OVModelForCausalLM
+stopwords:
+- <|end_of_turn|>
+- <|endoftext|>
+prompt_cache_path: "cache"
+prompt_cache_all: true
+template:
+  chat_message: |
+    {{if eq .RoleName "system"}}{{.Content}}<|end_of_turn|>{{end}}{{if eq .RoleName "assistant"}}<|end_of_turn|>GPT4 Correct Assistant: {{.Content}}<|end_of_turn|>{{end}}{{if eq .RoleName "user"}}GPT4 Correct User: {{.Content}}{{end}}
+
+  chat: |
+    {{.Input}}<|end_of_turn|>GPT4 Correct Assistant:
+
+  completion: |
+    {{.Input}}
+```
