@@ -19,7 +19,8 @@ type ModelGalleryEndpointService struct {
 }
 
 type GalleryModel struct {
-	ID string `json:"id"`
+	ID        string `json:"id"`
+	ConfigURL string `json:"config_url"`
 	gallery.GalleryModel
 }
 
@@ -60,11 +61,33 @@ func (mgs *ModelGalleryEndpointService) ApplyModelGalleryEndpoint() func(c *fibe
 			return err
 		}
 		mgs.galleryApplier.C <- gallery.GalleryOp{
-			Req:         input.GalleryModel,
-			Id:          uuid.String(),
-			GalleryName: input.ID,
-			Galleries:   mgs.galleries,
+			Req:              input.GalleryModel,
+			Id:               uuid.String(),
+			GalleryModelName: input.ID,
+			Galleries:        mgs.galleries,
+			ConfigURL:        input.ConfigURL,
 		}
+		return c.JSON(struct {
+			ID        string `json:"uuid"`
+			StatusURL string `json:"status"`
+		}{ID: uuid.String(), StatusURL: c.BaseURL() + "/models/jobs/" + uuid.String()})
+	}
+}
+
+func (mgs *ModelGalleryEndpointService) DeleteModelGalleryEndpoint() func(c *fiber.Ctx) error {
+	return func(c *fiber.Ctx) error {
+		modelName := c.Params("name")
+
+		mgs.galleryApplier.C <- gallery.GalleryOp{
+			Delete:           true,
+			GalleryModelName: modelName,
+		}
+
+		uuid, err := uuid.NewUUID()
+		if err != nil {
+			return err
+		}
+
 		return c.JSON(struct {
 			ID        string `json:"uuid"`
 			StatusURL string `json:"status"`

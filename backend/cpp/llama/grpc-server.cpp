@@ -791,7 +791,7 @@ struct llama_server_context
                     sampler_names.emplace_back(sampler_name);
                 }
             }
-            slot->sparams.samplers_sequence = sampler_types_from_names(sampler_names, false);
+            slot->sparams.samplers_sequence = llama_sampling_types_from_names(sampler_names, false);
         }
         else
         {
@@ -1146,7 +1146,7 @@ struct llama_server_context
         std::vector<std::string> samplers_sequence;
         for (const auto &sampler_type : slot.sparams.samplers_sequence)
         {
-            samplers_sequence.emplace_back(sampler_type_to_name_string(sampler_type));
+            samplers_sequence.emplace_back(llama_sampling_type_to_str(sampler_type));
         }
 
         return json {
@@ -2217,6 +2217,12 @@ static void params_parse(const backend::ModelOptions* request,
     } else {
         params.n_parallel = 1;
     }
+
+    const char *llama_grpc_servers = std::getenv("LLAMACPP_GRPC_SERVERS");
+    if (llama_grpc_servers != NULL) {
+        params.rpc_servers = std::string(llama_grpc_servers);
+    }
+    
     // TODO: Add yarn
 
     if (!request->tensorsplit().empty()) {
@@ -2254,6 +2260,9 @@ static void params_parse(const backend::ModelOptions* request,
     }
     params.use_mlock = request->mlock();
     params.use_mmap = request->mmap();
+    params.flash_attn = request->flashattention();
+    params.no_kv_offload = request->nokvoffload();
+
     params.embedding = request->embeddings();
 
     if (request->ropescaling() == "none")   { params.rope_scaling_type = LLAMA_ROPE_SCALING_TYPE_NONE; }
@@ -2332,6 +2341,10 @@ public:
                 std::string completion_text = result.result_json.value("content", "");
 
                 reply.set_message(completion_text);
+                int32_t tokens_predicted = result.result_json.value("tokens_predicted", 0);
+                reply.set_tokens(tokens_predicted);
+                int32_t tokens_evaluated = result.result_json.value("tokens_evaluated", 0);
+                reply.set_prompt_tokens(tokens_evaluated);
 
                 // Send the reply
                 writer->Write(reply);
@@ -2357,6 +2370,10 @@ public:
         task_result result = llama.queue_results.recv(task_id);
         if (!result.error && result.stop) {
             completion_text = result.result_json.value("content", "");
+            int32_t tokens_predicted = result.result_json.value("tokens_predicted", 0);
+            int32_t tokens_evaluated = result.result_json.value("tokens_evaluated", 0);
+            reply->set_prompt_tokens(tokens_evaluated);
+            reply->set_tokens(tokens_predicted);
             reply->set_message(completion_text);
         }
         else

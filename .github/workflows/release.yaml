@@ -1,9 +1,11 @@
 name: Build and Release
 
-on: push
+on:
+- push
+- pull_request
 
 env:
-  GRPC_VERSION: v1.58.0
+  GRPC_VERSION: v1.64.0
 
 permissions:
   contents: write
@@ -14,48 +16,70 @@ concurrency:
 
 jobs:
   build-linux:
-    strategy:
-      matrix:
-        include:
-          - build: 'avx2'
-            defines: ''
-          - build: 'avx'
-            defines: '-DLLAMA_AVX2=OFF'
-          - build: 'avx512'
-            defines: '-DLLAMA_AVX512=ON'
-          - build: 'cuda12'
-            defines: ''
-          - build: 'cuda11'
-            defines: ''
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-set
     steps:
+      - name: Force Install GIT latest
+        run: |
+          sudo apt-get update \
+          && sudo apt-get install -y software-properties-common \
+          && sudo apt-get update \
+          && sudo add-apt-repository -y ppa:git-core/ppa \
+          && sudo apt-get update \
+          && sudo apt-get install -y git
       - name: Clone
         uses: actions/checkout@v4
         with:
           submodules: true
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.21.x'
           cache: false
       - name: Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install build-essential ffmpeg
-      - name: Install CUDA Dependencies
-        if: ${{ matrix.build == 'cuda12' || matrix.build == 'cuda11' }}
+          sudo apt-get install -y wget curl build-essential ffmpeg protobuf-compiler ccache cmake
+      - name: Intel Dependencies
         run: |
-          if [ "${{ matrix.build }}" == "cuda12" ]; then
-            export CUDA_VERSION=12-3
-          else
-            export CUDA_VERSION=11-7
-          fi
+          wget -O- https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB | gpg --dearmor | sudo tee /usr/share/keyrings/oneapi-archive-keyring.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/oneapi-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" | sudo tee /etc/apt/sources.list.d/oneAPI.list
+          sudo apt update
+          sudo apt install -y intel-basekit
+      - name: Install CUDA Dependencies
+        run: |
           curl -O https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
           sudo dpkg -i cuda-keyring_1.1-1_all.deb
           sudo apt-get update
           sudo apt-get install -y cuda-nvcc-${CUDA_VERSION} libcublas-dev-${CUDA_VERSION}
+        env:
+          CUDA_VERSION: 12-3
+      - name: "Install Hipblas"
+        env:
+          ROCM_VERSION: "6.1"
+          AMDGPU_VERSION: "6.1"
+        run: |
+            set -ex 
+
+            sudo apt-get update
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl libnuma-dev gnupg 
+            
+            curl -sL https://repo.radeon.com/rocm/rocm.gpg.key | sudo apt-key add - 
+              
+            printf "deb [arch=amd64] https://repo.radeon.com/rocm/apt/$ROCM_VERSION/ jammy main" | sudo tee /etc/apt/sources.list.d/rocm.list
+            
+            printf "deb [arch=amd64] https://repo.radeon.com/amdgpu/$AMDGPU_VERSION/ubuntu jammy main" | sudo tee /etc/apt/sources.list.d/amdgpu.list
+            printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600' | sudo tee /etc/apt/preferences.d/rocm-pin-600
+            sudo apt-get update
+
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+                hipblas-dev rocm-dev \
+                rocblas-dev
+          
+            sudo apt-get clean
+            sudo rm -rf /var/lib/apt/lists/*
+            sudo ldconfig 
       - name: Cache grpc
         id: cache-grpc
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: grpc
           key: ${{ runner.os }}-grpc-${{ env.GRPC_VERSION }}
@@ -71,23 +95,20 @@ jobs:
           cd grpc && cd cmake/build && sudo make --jobs 5 --output-sync=target install
       - name: Build
         id: build
-        env:
-          CMAKE_ARGS: "${{ matrix.defines }}"
-          BUILD_ID: "${{ matrix.build }}"
         run: |
-          if [ "${{ matrix.build }}" == "cuda12" ] || [ "${{ matrix.build }}" == "cuda11" ]; then
-            export BUILD_TYPE=cublas
-            export PATH=/usr/local/cuda/bin:$PATH
-            make dist
-          else
-            STATIC=true make dist
-          fi
-      - uses: actions/upload-artifact@v3
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@8ba23be9613c672d40ae261d2a1335d639bdd59b
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.0
+          export PATH=$PATH:$GOPATH/bin
+          export PATH=/usr/local/cuda/bin:$PATH
+          export PATH=/opt/rocm/bin:$PATH
+          source /opt/intel/oneapi/setvars.sh
+          GO_TAGS=p2p make -j4 dist
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.build }}
+          name: LocalAI-linux
           path: release/
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
@@ -100,66 +121,63 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.21.x'
           cache: false
       - name: Dependencies
         run: |
-          sudo apt-get install -y --no-install-recommends libopencv-dev
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libopencv-dev protobuf-compiler ccache
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@8ba23be9613c672d40ae261d2a1335d639bdd59b
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.0
       - name: Build stablediffusion
         run: |
+          export PATH=$PATH:$GOPATH/bin
           make backend-assets/grpc/stablediffusion
           mkdir -p release && cp backend-assets/grpc/stablediffusion release
-      - uses: actions/upload-artifact@v3
+        env:
+          GO_TAGS: stablediffusion
+      - uses: actions/upload-artifact@v4
         with:
           name: stablediffusion
           path: release/
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
             release/*
 
-  build-macOS:
-    strategy:
-      matrix:
-        include:
-          - build: 'avx2'
-            defines: ''
-          - build: 'avx'
-            defines: '-DLLAMA_AVX2=OFF'
-          - build: 'avx512'
-            defines: '-DLLAMA_AVX512=ON'
-    runs-on: macOS-latest
+  build-macOS-arm64:
+    runs-on: macos-14
     steps:
       - name: Clone
         uses: actions/checkout@v4
         with:
           submodules: true
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.21.x'
           cache: false
       - name: Dependencies
         run: |
           brew install protobuf grpc
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@8ba23be9613c672d40ae261d2a1335d639bdd59b
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.0
       - name: Build
         id: build
-        env:
-          CMAKE_ARGS: "${{ matrix.defines }}"
-          BUILD_ID: "${{ matrix.build }}"
         run: |
           export C_INCLUDE_PATH=/usr/local/include
           export CPLUS_INCLUDE_PATH=/usr/local/include
-          make dist
-      - uses: actions/upload-artifact@v3
+          export PATH=$PATH:$GOPATH/bin
+          GO_TAGS=p2p make dist
+      - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.build }}
+          name: LocalAI-MacOS-arm64
           path: release/
       - name: Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |

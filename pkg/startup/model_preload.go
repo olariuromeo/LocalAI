@@ -20,7 +20,7 @@ func PreloadModelsConfigurations(modelLibraryURL string, modelPath string, model
 		// As a best effort, try to resolve the model from the remote library
 		// if it's not resolved we try with the other method below
 		if modelLibraryURL != "" {
-			lib, err := embedded.GetRemoteLibraryShorteners(modelLibraryURL)
+			lib, err := embedded.GetRemoteLibraryShorteners(modelLibraryURL, modelPath)
 			if err == nil {
 				if lib[url] != "" {
 					log.Debug().Msgf("[startup] model configuration is defined remotely: %s (%s)", url, lib[url])
@@ -54,7 +54,7 @@ func PreloadModelsConfigurations(modelLibraryURL string, modelPath string, model
 			// check if file exists
 			if _, err := os.Stat(filepath.Join(modelPath, md5Name)); errors.Is(err, os.ErrNotExist) {
 				modelDefinitionFilePath := filepath.Join(modelPath, md5Name) + ".yaml"
-				err := downloader.DownloadFile(url, modelDefinitionFilePath, "", func(fileName, current, total string, percent float64) {
+				err := downloader.DownloadFile(url, modelDefinitionFilePath, "", 0, 0, func(fileName, current, total string, percent float64) {
 					utils.DisplayDownloadFunction(fileName, current, total, percent)
 				})
 				if err != nil {

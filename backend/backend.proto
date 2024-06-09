@@ -23,6 +23,30 @@ service Backend {
   rpc StoresDelete(StoresDeleteOptions) returns (Result) {}
   rpc StoresGet(StoresGetOptions) returns (StoresGetResult) {}
   rpc StoresFind(StoresFindOptions) returns (StoresFindResult) {}
+
+  rpc Rerank(RerankRequest) returns (RerankResult) {}
+}
+
+message RerankRequest {
+  string query = 1;
+  repeated string documents = 2;
+  int32 top_n = 3;
+}
+
+message RerankResult {
+  Usage usage = 1;
+  repeated DocumentResult results = 2;
+}
+
+message Usage {
+  int32 total_tokens = 1;
+  int32 prompt_tokens = 2;
+}
+
+message DocumentResult {
+  int32 index = 1;
+  string text = 2;
+  float relevance_score = 3;
 }
 
 message StoresKey {
@@ -107,11 +131,15 @@ message PredictOptions {
   string NegativePrompt = 40;
   int32 NDraft = 41;
   repeated string Images = 42;
+  bool UseTokenizerTemplate = 43;
+  repeated Message Messages = 44;
 }
 
 // The response message containing the result
 message Reply {
   bytes message = 1;
+  int32 tokens = 2;
+  int32 prompt_tokens = 3;
 }
 
 message ModelOptions {
@@ -173,6 +201,7 @@ message ModelOptions {
   bool   EnforceEager = 52;
   int32  SwapSpace = 53;
   int32  MaxModelLen = 54;
+  int32  TensorParallelSize = 55;
 
   string MMProj = 41;
 
@@ -183,6 +212,9 @@ message ModelOptions {
   float YarnBetaSlow = 47;
 
   string Type = 49;
+
+  bool FlashAttention = 56;
+  bool NoKVOffload = 57;
 }
 
 message Result {
@@ -234,6 +266,7 @@ message TTSRequest {
   string model = 2;
   string dst = 3;
   string voice = 4;
+  optional string language = 5;
 }
 
 message TokenizationResponse {
@@ -255,4 +288,9 @@ message StatusResponse {
   }
   State state = 1;
   MemoryUsageData memory = 2;
+}
+
+message Message {
+  string role = 1;
+  string content = 2;
 }

@@ -12,15 +12,28 @@ export SKIP_CONDA=1
 endif
 
 .PHONY: diffusers
-diffusers:
-	@echo "Installing $(CONDA_ENV_PATH)..."
-	bash install.sh $(CONDA_ENV_PATH)
+diffusers: protogen
+	bash install.sh
 
 .PHONY: run
-run:
+run: protogen
 	@echo "Running diffusers..."
 	bash run.sh
 	@echo "Diffusers run."
 
-test:
+test: protogen
 	bash test.sh
+
+.PHONY: protogen
+protogen: backend_pb2_grpc.py backend_pb2.py
+
+.PHONY: protogen-clean
+protogen-clean:
+	$(RM) backend_pb2_grpc.py backend_pb2.py
+
+backend_pb2_grpc.py backend_pb2.py:
+	python3 -m grpc_tools.protoc -I../.. --python_out=. --grpc_python_out=. backend.proto
+
+.PHONY: clean
+clean: protogen-clean
+	rm -rf venv __pycache__

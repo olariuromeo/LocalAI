@@ -1,27 +1,28 @@
 package config
 
 import (
-	"errors"
-	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
-	"sort"
+	"regexp"
 	"strings"
-	"sync"
 
 	"github.com/go-skynet/LocalAI/core/schema"
 	"github.com/go-skynet/LocalAI/pkg/downloader"
+	"github.com/go-skynet/LocalAI/pkg/functions"
 	"github.com/go-skynet/LocalAI/pkg/utils"
-	"github.com/rs/zerolog/log"
-	"gopkg.in/yaml.v3"
-
-	"github.com/charmbracelet/glamour"
 )
 
 const (
 	RAND_SEED = -1
 )
+
+type TTSConfig struct {
+
+	// Voice wav path or id
+	Voice string `yaml:"voice"`
+
+	// Vall-e-x
+	VallE VallE `yaml:"vall-e"`
+}
 
 type BackendConfig struct {
 	schema.PredictionOptions `yaml:"parameters"`
@@ -35,11 +36,13 @@ type BackendConfig struct {
 	Backend        string            `yaml:"backend"`
 	TemplateConfig TemplateConfig    `yaml:"template"`
 
-	PromptStrings, InputStrings                []string `yaml:"-"`
-	InputToken                                 [][]int  `yaml:"-"`
-	functionCallString, functionCallNameString string   `yaml:"-"`
+	PromptStrings, InputStrings                []string               `yaml:"-"`
+	InputToken                                 [][]int                `yaml:"-"`
+	functionCallString, functionCallNameString string                 `yaml:"-"`
+	ResponseFormat                             string                 `yaml:"-"`
+	ResponseFormatMap                          map[string]interface{} `yaml:"-"`
 
-	FunctionsConfig Functions `yaml:"function"`
+	FunctionsConfig functions.FunctionsConfig `yaml:"function"`
 
 	FeatureFlag FeatureFlag `yaml:"feature_flags"` // Feature Flag registry. We move fast, and features may break on a per model/backend basis. Registry for (usually temporary) flags that indicate aborting something early.
 	// LLM configs (GPT4ALL, Llama.cpp, ...)
@@ -55,8 +58,8 @@ type BackendConfig struct {
 	// GRPC Options
 	GRPC GRPC `yaml:"grpc"`
 
-	// Vall-e-x
-	VallE VallE `yaml:"vall-e"`
+	// TTS specifics
+	TTSConfig `yaml:"tts"`
 
 	// CUDA
 	// Explicitly enable CUDA or not (some backends might need it)
@@ -103,6 +106,8 @@ type Diffusers struct {
 	ControlNet       string  `yaml:"control_net"`
 }
 
+// LLMConfig is a struct that holds the configuration that are
+// generic for most of the LLM backends.
 type LLMConfig struct {
 	SystemPrompt    string   `yaml:"system_prompt"`
 	TensorSplit     string   `yaml:"tensor_split"`
@@ -139,7 +144,11 @@ type LLMConfig struct {
 	EnforceEager         bool    `yaml:"enforce_eager"`          // vLLM
 	SwapSpace            int     `yaml:"swap_space"`             // vLLM
 	MaxModelLen          int     `yaml:"max_model_len"`          // vLLM
+	TensorParallelSize   int     `yaml:"tensor_parallel_size"`   // vLLM
 	MMProj               string  `yaml:"mmproj"`
+
+	FlashAttention bool `yaml:"flash_attention"`
+	NoKVOffloading bool `yaml:"no_kv_offloading"`
 
 	RopeScaling string `yaml:"rope_scaling"`
 	ModelType   string `yaml:"type"`
@@ -150,6 +159,7 @@ type LLMConfig struct {
 	YarnBetaSlow   float32 `yaml:"yarn_beta_slow"`
 }
 
+// AutoGPTQ is a struct that holds the configuration specific to the AutoGPTQ backend
 type AutoGPTQ struct {
 	ModelBaseName    string `yaml:"model_base_name"`
 	Device           string `yaml:"device"`
@@ -157,19 +167,31 @@ type AutoGPTQ struct {
 	UseFastTokenizer bool   `yaml:"use_fast_tokenizer"`
 }
 
-type Functions struct {
-	DisableNoAction         bool   `yaml:"disable_no_action"`
-	NoActionFunctionName    string `yaml:"no_action_function_name"`
-	NoActionDescriptionName string `yaml:"no_action_description_name"`
-	ParallelCalls           bool   `yaml:"parallel_calls"`
-}
-
+// TemplateConfig is a struct that holds the configuration of the templating system
 type TemplateConfig struct {
-	Chat        string `yaml:"chat"`
+	// Chat is the template used in the chat completion endpoint
+	Chat string `yaml:"chat"`
+
+	// ChatMessage is the template used for chat messages
 	ChatMessage string `yaml:"chat_message"`
-	Completion  string `yaml:"completion"`
-	Edit        string `yaml:"edit"`
-	Functions   string `yaml:"function"`
+
+	// Completion is the template used for completion requests
+	Completion string `yaml:"completion"`
+
+	// Edit is the template used for edit completion requests
+	Edit string `yaml:"edit"`
+
+	// Functions is the template used when tools are present in the client requests
+	Functions string `yaml:"function"`
+
+	// UseTokenizerTemplate is a flag that indicates if the tokenizer template should be used.
+	// Note: this is mostly consumed for backends such as vllm and transformers
+	// that can use the tokenizers specified in the JSON config files of the models
+	UseTokenizerTemplate bool `yaml:"use_tokenizer_template"`
+
+	// JoinChatMessagesByCharacter is a string that will be used to join chat messages together.
+	// It defaults to \n
+	JoinChatMessagesByCharacter *string `yaml:"join_chat_messages_by_character"`
 }
 
 func (c *BackendConfig) SetFunctionCallString(s string) {
@@ -186,6 +208,36 @@ func (c *BackendConfig) ShouldUseFunctions() bool {
 
 func (c *BackendConfig) ShouldCallSpecificFunction() bool {
 	return len(c.functionCallNameString) > 0
+}
+
+// MMProjFileName returns the filename of the MMProj file
+// If the MMProj is a URL, it will return the MD5 of the URL which is the filename
+func (c *BackendConfig) MMProjFileName() string {
+	modelURL := downloader.ConvertURL(c.MMProj)
+	if downloader.LooksLikeURL(modelURL) {
+		return utils.MD5(modelURL)
+	}
+
+	return c.MMProj
+}
+
+func (c *BackendConfig) IsMMProjURL() bool {
+	return downloader.LooksLikeURL(downloader.ConvertURL(c.MMProj))
+}
+
+func (c *BackendConfig) IsModelURL() bool {
+	return downloader.LooksLikeURL(downloader.ConvertURL(c.Model))
+}
+
+// ModelFileName returns the filename of the model
+// If the model is a URL, it will return the MD5 of the URL which is the filename
+func (c *BackendConfig) ModelFileName() string {
+	modelURL := downloader.ConvertURL(c.Model)
+	if downloader.LooksLikeURL(modelURL) {
+		return utils.MD5(modelURL)
+	}
+
+	return c.Model
 }
 
 func (c *BackendConfig) FunctionToCall() string {
@@ -209,15 +261,15 @@ func (cfg *BackendConfig) SetDefaults(opts ...ConfigLoaderOption) {
 	defaultTopP := 0.95
 	defaultTopK := 40
 	defaultTemp := 0.9
-	defaultMaxTokens := 2048
 	defaultMirostat := 2
 	defaultMirostatTAU := 5.0
 	defaultMirostatETA := 0.1
 	defaultTypicalP := 1.0
 	defaultTFZ := 1.0
+	defaultZero := 0
 
 	// Try to offload all GPU layers (if GPU is found)
-	defaultNGPULayers := 99999999
+	defaultHigh := 99999999
 
 	trueV := true
 	falseV := false
@@ -242,7 +294,13 @@ func (cfg *BackendConfig) SetDefaults(opts ...ConfigLoaderOption) {
 
 	if cfg.MMap == nil {
 		// MMap is enabled by default
-		cfg.MMap = &trueV
+
+		// Only exception is for Intel GPUs
+		if os.Getenv("XPU") != "" {
+			cfg.MMap = &falseV
+		} else {
+			cfg.MMap = &trueV
+		}
 	}
 
 	if cfg.MMlock == nil {
@@ -258,7 +316,7 @@ func (cfg *BackendConfig) SetDefaults(opts ...ConfigLoaderOption) {
 	}
 
 	if cfg.Maxtokens == nil {
-		cfg.Maxtokens = &defaultMaxTokens
+		cfg.Maxtokens = &defaultZero
 	}
 
 	if cfg.Mirostat == nil {
@@ -273,7 +331,7 @@ func (cfg *BackendConfig) SetDefaults(opts ...ConfigLoaderOption) {
 		cfg.MirostatTAU = &defaultMirostatTAU
 	}
 	if cfg.NGPULayers == nil {
-		cfg.NGPULayers = &defaultNGPULayers
+		cfg.NGPULayers = &defaultHigh
 	}
 
 	if cfg.LowVRAM == nil {
@@ -310,288 +368,41 @@ func (cfg *BackendConfig) SetDefaults(opts ...ConfigLoaderOption) {
 	if debug {
 		cfg.Debug = &trueV
 	}
+
+	guessDefaultsFromFile(cfg, lo.modelPath)
 }
 
-////// Config Loader ////////
-
-type BackendConfigLoader struct {
-	configs map[string]BackendConfig
-	sync.Mutex
-}
-
-type LoadOptions struct {
-	debug            bool
-	threads, ctxSize int
-	f16              bool
-}
-
-func LoadOptionDebug(debug bool) ConfigLoaderOption {
-	return func(o *LoadOptions) {
-		o.debug = debug
+func (c *BackendConfig) Validate() bool {
+	downloadedFileNames := []string{}
+	for _, f := range c.DownloadFiles {
+		downloadedFileNames = append(downloadedFileNames, f.Filename)
 	}
-}
-
-func LoadOptionThreads(threads int) ConfigLoaderOption {
-	return func(o *LoadOptions) {
-		o.threads = threads
-	}
-}
-
-func LoadOptionContextSize(ctxSize int) ConfigLoaderOption {
-	return func(o *LoadOptions) {
-		o.ctxSize = ctxSize
-	}
-}
-
-func LoadOptionF16(f16 bool) ConfigLoaderOption {
-	return func(o *LoadOptions) {
-		o.f16 = f16
-	}
-}
-
-type ConfigLoaderOption func(*LoadOptions)
-
-func (lo *LoadOptions) Apply(options ...ConfigLoaderOption) {
-	for _, l := range options {
-		l(lo)
-	}
-}
-
-// Load a config file for a model
-func (cl *BackendConfigLoader) LoadBackendConfigFileByName(modelName, modelPath string, opts ...ConfigLoaderOption) (*BackendConfig, error) {
-
-	// Load a config file if present after the model name
-	cfg := &BackendConfig{
-		PredictionOptions: schema.PredictionOptions{
-			Model: modelName,
-		},
-	}
-
-	cfgExisting, exists := cl.GetBackendConfig(modelName)
-	if exists {
-		cfg = &cfgExisting
-	} else {
-		// Try loading a model config file
-		modelConfig := filepath.Join(modelPath, modelName+".yaml")
-		if _, err := os.Stat(modelConfig); err == nil {
-			if err := cl.LoadBackendConfig(
-				modelConfig, opts...,
-			); err != nil {
-				return nil, fmt.Errorf("failed loading model config (%s) %s", modelConfig, err.Error())
-			}
-			cfgExisting, exists = cl.GetBackendConfig(modelName)
-			if exists {
-				cfg = &cfgExisting
-			}
-		}
-	}
-
-	cfg.SetDefaults(opts...)
-
-	return cfg, nil
-}
-
-func NewBackendConfigLoader() *BackendConfigLoader {
-	return &BackendConfigLoader{
-		configs: make(map[string]BackendConfig),
-	}
-}
-func ReadBackendConfigFile(file string, opts ...ConfigLoaderOption) ([]*BackendConfig, error) {
-	c := &[]*BackendConfig{}
-	f, err := os.ReadFile(file)
-	if err != nil {
-		return nil, fmt.Errorf("cannot read config file: %w", err)
-	}
-	if err := yaml.Unmarshal(f, c); err != nil {
-		return nil, fmt.Errorf("cannot unmarshal config file: %w", err)
-	}
-
-	for _, cc := range *c {
-		cc.SetDefaults(opts...)
-	}
-
-	return *c, nil
-}
-
-func ReadBackendConfig(file string, opts ...ConfigLoaderOption) (*BackendConfig, error) {
-	lo := &LoadOptions{}
-	lo.Apply(opts...)
-
-	c := &BackendConfig{}
-	f, err := os.ReadFile(file)
-	if err != nil {
-		return nil, fmt.Errorf("cannot read config file: %w", err)
-	}
-	if err := yaml.Unmarshal(f, c); err != nil {
-		return nil, fmt.Errorf("cannot unmarshal config file: %w", err)
-	}
-
-	c.SetDefaults(opts...)
-	return c, nil
-}
-
-func (cm *BackendConfigLoader) LoadBackendConfigFile(file string, opts ...ConfigLoaderOption) error {
-	cm.Lock()
-	defer cm.Unlock()
-	c, err := ReadBackendConfigFile(file, opts...)
-	if err != nil {
-		return fmt.Errorf("cannot load config file: %w", err)
-	}
-
-	for _, cc := range c {
-		cm.configs[cc.Name] = *cc
-	}
-	return nil
-}
-
-func (cl *BackendConfigLoader) LoadBackendConfig(file string, opts ...ConfigLoaderOption) error {
-	cl.Lock()
-	defer cl.Unlock()
-	c, err := ReadBackendConfig(file, opts...)
-	if err != nil {
-		return fmt.Errorf("cannot read config file: %w", err)
-	}
-
-	cl.configs[c.Name] = *c
-	return nil
-}
-
-func (cl *BackendConfigLoader) GetBackendConfig(m string) (BackendConfig, bool) {
-	cl.Lock()
-	defer cl.Unlock()
-	v, exists := cl.configs[m]
-	return v, exists
-}
-
-func (cl *BackendConfigLoader) GetAllBackendConfigs() []BackendConfig {
-	cl.Lock()
-	defer cl.Unlock()
-	var res []BackendConfig
-	for _, v := range cl.configs {
-		res = append(res, v)
-	}
-
-	sort.SliceStable(res, func(i, j int) bool {
-		return res[i].Name < res[j].Name
-	})
-
-	return res
-}
-
-func (cl *BackendConfigLoader) ListBackendConfigs() []string {
-	cl.Lock()
-	defer cl.Unlock()
-	var res []string
-	for k := range cl.configs {
-		res = append(res, k)
-	}
-	return res
-}
-
-// Preload prepare models if they are not local but url or huggingface repositories
-func (cl *BackendConfigLoader) Preload(modelPath string) error {
-	cl.Lock()
-	defer cl.Unlock()
-
-	status := func(fileName, current, total string, percent float64) {
-		utils.DisplayDownloadFunction(fileName, current, total, percent)
-	}
-
-	log.Info().Msgf("Preloading models from %s", modelPath)
-
-	renderMode := "dark"
-	if os.Getenv("COLOR") != "" {
-		renderMode = os.Getenv("COLOR")
-	}
-
-	glamText := func(t string) {
-		out, err := glamour.Render(t, renderMode)
-		if err == nil && os.Getenv("NO_COLOR") == "" {
-			fmt.Println(out)
-		} else {
-			fmt.Println(t)
-		}
-	}
-
-	for i, config := range cl.configs {
-
-		// Download files and verify their SHA
-		for _, file := range config.DownloadFiles {
-			log.Debug().Msgf("Checking %q exists and matches SHA", file.Filename)
-
-			if err := utils.VerifyPath(file.Filename, modelPath); err != nil {
-				return err
-			}
-			// Create file path
-			filePath := filepath.Join(modelPath, file.Filename)
-
-			if err := downloader.DownloadFile(file.URI, filePath, file.SHA256, status); err != nil {
-				return err
-			}
-		}
-
-		modelURL := config.PredictionOptions.Model
-		modelURL = downloader.ConvertURL(modelURL)
-
-		if downloader.LooksLikeURL(modelURL) {
-			// md5 of model name
-			md5Name := utils.MD5(modelURL)
-
-			// check if file exists
-			if _, err := os.Stat(filepath.Join(modelPath, md5Name)); errors.Is(err, os.ErrNotExist) {
-				err := downloader.DownloadFile(modelURL, filepath.Join(modelPath, md5Name), "", status)
-				if err != nil {
-					return err
-				}
-			}
-
-			cc := cl.configs[i]
-			c := &cc
-			c.PredictionOptions.Model = md5Name
-			cl.configs[i] = *c
-		}
-		if cl.configs[i].Name != "" {
-			glamText(fmt.Sprintf("**Model name**: _%s_", cl.configs[i].Name))
-		}
-		if cl.configs[i].Description != "" {
-			//glamText("**Description**")
-			glamText(cl.configs[i].Description)
-		}
-		if cl.configs[i].Usage != "" {
-			//glamText("**Usage**")
-			glamText(cl.configs[i].Usage)
-		}
-	}
-	return nil
-}
-
-// LoadBackendConfigsFromPath reads all the configurations of the models from a path
-// (non-recursive)
-func (cm *BackendConfigLoader) LoadBackendConfigsFromPath(path string, opts ...ConfigLoaderOption) error {
-	cm.Lock()
-	defer cm.Unlock()
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return err
-	}
-	files := make([]fs.FileInfo, 0, len(entries))
-	for _, entry := range entries {
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		files = append(files, info)
-	}
-	for _, file := range files {
-		// Skip templates, YAML and .keep files
-		if !strings.Contains(file.Name(), ".yaml") && !strings.Contains(file.Name(), ".yml") {
+	validationTargets := []string{c.Backend, c.Model, c.MMProj}
+	validationTargets = append(validationTargets, downloadedFileNames...)
+	// Simple validation to make sure the model can be correctly loaded
+	for _, n := range validationTargets {
+		if n == "" {
 			continue
 		}
-		c, err := ReadBackendConfig(filepath.Join(path, file.Name()), opts...)
-		if err == nil {
-			cm.configs[c.Name] = *c
+		if strings.HasPrefix(n, string(os.PathSeparator)) ||
+			strings.Contains(n, "..") {
+			return false
 		}
 	}
 
-	return nil
+	if c.Name == "" {
+		return false
+	}
+
+	if c.Backend != "" {
+		// a regex that checks that is a string name with no special characters, except '-' and '_'
+		re := regexp.MustCompile(`^[a-zA-Z0-9-_]+$`)
+		return re.MatchString(c.Backend)
+	}
+
+	return true
+}
+
+func (c *BackendConfig) HasTemplate() bool {
+	return c.TemplateConfig.Completion != "" || c.TemplateConfig.Edit != "" || c.TemplateConfig.Chat != "" || c.TemplateConfig.ChatMessage != ""
 }

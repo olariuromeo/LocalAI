@@ -131,27 +131,25 @@ Note: If you are on Windows, please make sure the project is on the Linux Filesy
 
 {{% tab tabName="Kubernetes" %}}
 
-For installing LocalAI in Kubernetes, you can use the following helm chart:
-
-```bash
-# Install the helm repository
-helm repo add go-skynet https://go-skynet.github.io/helm-charts/
-# Update the repositories
-helm repo update
-# Get the values
-helm show values go-skynet/local-ai > values.yaml
-
-# Edit the values value if needed
-# vim values.yaml ...
-
-# Install the helm chart
-helm install local-ai go-skynet/local-ai -f values.yaml
-```
+See the [Kubernetes section]({{%relref "docs/getting-started/kubernetes" %}}).
 
 {{% /tab %}}
 {{% tab tabName="From binary" %}}
 
 LocalAI binary releases are available in [Github](https://github.com/go-skynet/LocalAI/releases).
+
+{{% alert icon="⚠️" %}}
+If you are installing on MacOS, when you excecute the binary, you will get a message saying:
+
+> "local-ai-git-Darwin-arm64" (or whatever name you gave to the binary) can't be opened because Apple cannot check it for malicious software.
+
+Hit OK, and go to Settings > Privacy & Security > Security and look for the message:
+
+> "local-ai-git-Darwin-arm64" was blocked from use because it is not from an identified developer.
+
+And press "Allow Anyway"
+{{% /alert %}}
+
 
 {{% /tab %}}
 

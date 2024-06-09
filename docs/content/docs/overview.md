@@ -56,7 +56,7 @@ icon = "info"
 
 
 
-**LocalAI** is the free, Open Source OpenAI alternative. LocalAI act as a drop-in replacement REST API that's compatible with OpenAI API specifications for local inferencing. It allows you to run LLMs, generate images, audio (and not only) locally or on-prem with consumer grade hardware, supporting multiple model families and architectures. Does not require GPU. It is maintained by [mudler](https://github.com/mudler).
+**LocalAI** is the free, Open Source OpenAI alternative. LocalAI act as a drop-in replacement REST API that's compatible with OpenAI API specifications for local inferencing. It allows you to run LLMs, generate images, audio (and not only) locally or on-prem with consumer grade hardware, supporting multiple model families and architectures. Does not require GPU. It is created and maintained by [Ettore Di Giacinto](https://github.com/mudler).
 
 
 ## Start LocalAI
@@ -67,9 +67,9 @@ Start the image with Docker to have a functional clone of OpenAI! 🚀:
 docker run -p 8080:8080 --name local-ai -ti localai/localai:latest-aio-cpu
 # Do you have a Nvidia GPUs? Use this instead
 # CUDA 11
-# docker run -p 8080:8080 --gpus all --name local-ai -ti localai/localai:latest-aio-gpu-cuda-11
+# docker run -p 8080:8080 --gpus all --name local-ai -ti localai/localai:latest-aio-gpu-nvidia-cuda-11
 # CUDA 12
-# docker run -p 8080:8080 --gpus all --name local-ai -ti localai/localai:latest-aio-gpu-cuda-12
+# docker run -p 8080:8080 --gpus all --name local-ai -ti localai/localai:latest-aio-gpu-nvidia-cuda-12
 ```
 
 See the [💻 Quickstart](https://localai.io/basics/getting_started/) for all the options and way you can run LocalAI!
@@ -99,8 +99,10 @@ Note that this started just as a fun weekend project by [mudler](https://github.
 - 🧠 [Embeddings generation for vector databases](https://localai.io/features/embeddings/)
 - ✍️ [Constrained grammars](https://localai.io/features/constrained_grammars/)
 - 🖼️ [Download Models directly from Huggingface ](https://localai.io/models/)
-- 🆕 [Vision API](https://localai.io/features/gpt-vision/)
-- 💾 [Stores](https://localai.io/features/stores)
+- 🥽 [Vision API](https://localai.io/features/gpt-vision/)
+- 💾 [Stores](https://localai.io/stores)
+- 📈 [Reranker](https://localai.io/features/reranker/)
+- 🆕🖧 [P2P Inferencing](https://localai.io/features/distribute/)
 
 ## Contribute and help
 

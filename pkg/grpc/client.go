@@ -210,7 +210,7 @@ func (c *Client) TTS(ctx context.Context, in *pb.TTSRequest, opts ...grpc.CallOp
 	return client.TTS(ctx, in, opts...)
 }
 
-func (c *Client) AudioTranscription(ctx context.Context, in *pb.TranscriptRequest, opts ...grpc.CallOption) (*schema.Result, error) {
+func (c *Client) AudioTranscription(ctx context.Context, in *pb.TranscriptRequest, opts ...grpc.CallOption) (*schema.TranscriptionResult, error) {
 	if !c.parallel {
 		c.opMutex.Lock()
 		defer c.opMutex.Unlock()
@@ -231,7 +231,7 @@ func (c *Client) AudioTranscription(ctx context.Context, in *pb.TranscriptReques
 	if err != nil {
 		return nil, err
 	}
-	tresult := &schema.Result{}
+	tresult := &schema.TranscriptionResult{}
 	for _, s := range res.Segments {
 		tks := []int{}
 		for _, t := range s.Tokens {
@@ -354,4 +354,20 @@ func (c *Client) StoresFind(ctx context.Context, in *pb.StoresFindOptions, opts 
 	defer conn.Close()
 	client := pb.NewBackendClient(conn)
 	return client.StoresFind(ctx, in, opts...)
+}
+
+func (c *Client) Rerank(ctx context.Context, in *pb.RerankRequest, opts ...grpc.CallOption) (*pb.RerankResult, error) {
+	if !c.parallel {
+		c.opMutex.Lock()
+		defer c.opMutex.Unlock()
+	}
+	c.setBusy(true)
+	defer c.setBusy(false)
+	conn, err := grpc.Dial(c.address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	client := pb.NewBackendClient(conn)
+	return client.Rerank(ctx, in, opts...)
 }

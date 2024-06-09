@@ -5,7 +5,7 @@ BINARY_NAME=local-ai
 
 # llama.cpp versions
 GOLLAMA_STABLE_VERSION?=2b57a8ae43e4699d3dc5d1496a1ccd42922993be
-CPPLLAMA_VERSION?=1b67731e184e27a465b8c5476061294a4af668ea
+CPPLLAMA_VERSION?=d4d915d351d1f1270d56184bdd46672893e8a5d8
 
 # gpt4all version
 GPT4ALL_REPO?=https://github.com/nomic-ai/gpt4all
@@ -16,19 +16,19 @@ RWKV_REPO?=https://github.com/donomii/go-rwkv.cpp
 RWKV_VERSION?=661e7ae26d442f5cfebd2a0881b44e8c55949ec6
 
 # whisper.cpp version
-WHISPER_CPP_VERSION?=8f253ef3af1c62c04316ba4afa7145fc4d701a8c
+WHISPER_CPP_VERSION?=87acd6d629461ff48c3d58a504ea797736d4b070
 
 # bert.cpp version
-BERT_VERSION?=6abe312cded14042f6b7c3cd8edf082713334a4d
+BERT_VERSION?=710044b124545415f555e4260d16b146c725a6e4
 
 # go-piper version
 PIPER_VERSION?=9d0100873a7dbb0824dfea40e8cec70a1b110759
 
 # stablediffusion version
-STABLEDIFFUSION_VERSION?=362df9da29f882dbf09ade61972d16a1f53c3485
+STABLEDIFFUSION_VERSION?=4a3cd6aeae6f66ee57eae9a0075f8c58c3a6a38f
 
 # tinydream version
-TINYDREAM_VERSION?=22a12a4bc0ac5455856f28f3b771331a551a4293
+TINYDREAM_VERSION?=c04fa463ace9d9a6464313aa5f9cd0f953b6c057
 
 export BUILD_TYPE?=
 export STABLE_BUILD_TYPE?=$(BUILD_TYPE)
@@ -38,7 +38,7 @@ CGO_LDFLAGS?=
 CGO_LDFLAGS_WHISPER?=
 CUDA_LIBPATH?=/usr/local/cuda/lib64/
 GO_TAGS?=
-BUILD_ID?=git
+BUILD_ID?=
 
 TEST_DIR=/tmp/test
 
@@ -70,7 +70,7 @@ UNAME_S := $(shell uname -s)
 endif
 
 ifeq ($(OS),Darwin)
-	
+
 	ifeq ($(OSX_SIGNING_IDENTITY),)
 		OSX_SIGNING_IDENTITY := $(shell security find-identity -v -p codesigning | grep '"' | head -n 1 | sed -E 's/.*"(.*)"/\1/')
 	endif
@@ -99,8 +99,8 @@ endif
 ifeq ($(BUILD_TYPE),cublas)
 	CGO_LDFLAGS+=-lcublas -lcudart -L$(CUDA_LIBPATH)
 	export LLAMA_CUBLAS=1
-	export WHISPER_CUBLAS=1
-	CGO_LDFLAGS_WHISPER+=-L$(CUDA_LIBPATH)/stubs/ -lcuda
+	export WHISPER_CUDA=1
+	CGO_LDFLAGS_WHISPER+=-L$(CUDA_LIBPATH)/stubs/ -lcuda -lcufft
 endif
 
 ifeq ($(BUILD_TYPE),hipblas)
@@ -112,7 +112,7 @@ ifeq ($(BUILD_TYPE),hipblas)
 	# llama-ggml has no hipblas support, so override it here.
 	export STABLE_BUILD_TYPE=
 	export WHISPER_HIPBLAS=1
-	GPU_TARGETS ?= gfx900,gfx90a,gfx1030,gfx1031,gfx1100
+	GPU_TARGETS ?= gfx900,gfx906,gfx908,gfx940,gfx941,gfx942,gfx90a,gfx1030,gfx1031,gfx1100,gfx1101
 	AMDGPU_TARGETS ?= "$(GPU_TARGETS)"
 	CMAKE_ARGS+=-DLLAMA_HIPBLAS=ON -DAMDGPU_TARGETS="$(AMDGPU_TARGETS)" -DGPU_TARGETS="$(GPU_TARGETS)"
 	CGO_LDFLAGS += -O3 --rtlib=compiler-rt -unwindlib=libgcc -lhipblas -lrocblas --hip-link -L${ROCM_HOME}/lib/llvm/lib
@@ -152,10 +152,14 @@ ifeq ($(findstring tts,$(GO_TAGS)),tts)
 	OPTIONAL_GRPC+=backend-assets/grpc/piper
 endif
 
-ALL_GRPC_BACKENDS=backend-assets/grpc/langchain-huggingface
+ALL_GRPC_BACKENDS=backend-assets/grpc/huggingface
 ALL_GRPC_BACKENDS+=backend-assets/grpc/bert-embeddings
-ALL_GRPC_BACKENDS+=backend-assets/grpc/llama-cpp
+ALL_GRPC_BACKENDS+=backend-assets/grpc/llama-cpp-avx
+ALL_GRPC_BACKENDS+=backend-assets/grpc/llama-cpp-avx2
+ALL_GRPC_BACKENDS+=backend-assets/grpc/llama-cpp-fallback
 ALL_GRPC_BACKENDS+=backend-assets/grpc/llama-ggml
+ALL_GRPC_BACKENDS+=backend-assets/grpc/llama-cpp-grpc
+ALL_GRPC_BACKENDS+=backend-assets/util/llama-cpp-rpc-server
 ALL_GRPC_BACKENDS+=backend-assets/grpc/gpt4all
 ALL_GRPC_BACKENDS+=backend-assets/grpc/rwkv
 ALL_GRPC_BACKENDS+=backend-assets/grpc/whisper
@@ -179,20 +183,20 @@ endif
 all: help
 
 ## BERT embeddings
-sources/go-bert:
-	git clone --recurse-submodules https://github.com/go-skynet/go-bert.cpp sources/go-bert
-	cd sources/go-bert && git checkout -b build $(BERT_VERSION) && git submodule update --init --recursive --depth 1
+sources/go-bert.cpp:
+	git clone --recurse-submodules https://github.com/go-skynet/go-bert.cpp sources/go-bert.cpp
+	cd sources/go-bert.cpp && git checkout -b build $(BERT_VERSION) && git submodule update --init --recursive --depth 1
 
-sources/go-bert/libgobert.a: sources/go-bert
-	$(MAKE) -C sources/go-bert libgobert.a
+sources/go-bert.cpp/libgobert.a: sources/go-bert.cpp
+	$(MAKE) -C sources/go-bert.cpp libgobert.a
 
-## go-llama-ggml
-sources/go-llama-ggml:
-	git clone --recurse-submodules https://github.com/go-skynet/go-llama.cpp sources/go-llama-ggml
-	cd sources/go-llama-ggml && git checkout -b build $(GOLLAMA_STABLE_VERSION) && git submodule update --init --recursive --depth 1
+## go-llama.cpp
+sources/go-llama.cpp:
+	git clone --recurse-submodules https://github.com/go-skynet/go-llama.cpp sources/go-llama.cpp
+	cd sources/go-llama.cpp && git checkout -b build $(GOLLAMA_STABLE_VERSION) && git submodule update --init --recursive --depth 1
 
-sources/go-llama-ggml/libbinding.a: sources/go-llama-ggml
-	$(MAKE) -C sources/go-llama-ggml BUILD_TYPE=$(STABLE_BUILD_TYPE) libbinding.a
+sources/go-llama.cpp/libbinding.a: sources/go-llama.cpp
+	$(MAKE) -C sources/go-llama.cpp BUILD_TYPE=$(STABLE_BUILD_TYPE) libbinding.a
 
 ## go-piper
 sources/go-piper:
@@ -211,12 +215,12 @@ sources/gpt4all/gpt4all-bindings/golang/libgpt4all.a: sources/gpt4all
 	$(MAKE) -C sources/gpt4all/gpt4all-bindings/golang/ libgpt4all.a
 
 ## RWKV
-sources/go-rwkv:
-	git clone --recurse-submodules $(RWKV_REPO) sources/go-rwkv
-	cd sources/go-rwkv && git checkout -b build $(RWKV_VERSION) && git submodule update --init --recursive --depth 1
+sources/go-rwkv.cpp:
+	git clone --recurse-submodules $(RWKV_REPO) sources/go-rwkv.cpp
+	cd sources/go-rwkv.cpp && git checkout -b build $(RWKV_VERSION) && git submodule update --init --recursive --depth 1
 
-sources/go-rwkv/librwkv.a: sources/go-rwkv
-	cd sources/go-rwkv && cd rwkv.cpp &&	cmake . -DRWKV_BUILD_SHARED_LIBRARY=OFF &&	cmake --build . && 	cp librwkv.a ..
+sources/go-rwkv.cpp/librwkv.a: sources/go-rwkv.cpp
+	cd sources/go-rwkv.cpp && cd rwkv.cpp &&	cmake . -DRWKV_BUILD_SHARED_LIBRARY=OFF &&	cmake --build . && 	cp librwkv.a ..
 
 ## stable diffusion
 sources/go-stable-diffusion:
@@ -236,23 +240,24 @@ sources/go-tiny-dream/libtinydream.a: sources/go-tiny-dream
 
 ## whisper
 sources/whisper.cpp:
-	git clone https://github.com/ggerganov/whisper.cpp.git sources/whisper.cpp
+	git clone https://github.com/ggerganov/whisper.cpp sources/whisper.cpp
 	cd sources/whisper.cpp && git checkout -b build $(WHISPER_CPP_VERSION) && git submodule update --init --recursive --depth 1
 
 sources/whisper.cpp/libwhisper.a: sources/whisper.cpp
-	cd sources/whisper.cpp && make libwhisper.a
+	cd sources/whisper.cpp && $(MAKE) libwhisper.a
 
-get-sources: sources/go-llama-ggml sources/gpt4all sources/go-piper sources/go-rwkv sources/whisper.cpp sources/go-bert sources/go-stable-diffusion sources/go-tiny-dream
+get-sources: sources/go-llama.cpp sources/gpt4all sources/go-piper sources/go-rwkv.cpp sources/whisper.cpp sources/go-bert.cpp sources/go-stable-diffusion sources/go-tiny-dream
 
 replace:
-	$(GOCMD) mod edit -replace github.com/donomii/go-rwkv.cpp=$(CURDIR)/sources/go-rwkv
+	$(GOCMD) mod edit -replace github.com/donomii/go-rwkv.cpp=$(CURDIR)/sources/go-rwkv.cpp
 	$(GOCMD) mod edit -replace github.com/ggerganov/whisper.cpp=$(CURDIR)/sources/whisper.cpp
 	$(GOCMD) mod edit -replace github.com/ggerganov/whisper.cpp/bindings/go=$(CURDIR)/sources/whisper.cpp/bindings/go
-	$(GOCMD) mod edit -replace github.com/go-skynet/go-bert.cpp=$(CURDIR)/sources/go-bert
+	$(GOCMD) mod edit -replace github.com/go-skynet/go-bert.cpp=$(CURDIR)/sources/go-bert.cpp
 	$(GOCMD) mod edit -replace github.com/M0Rf30/go-tiny-dream=$(CURDIR)/sources/go-tiny-dream
 	$(GOCMD) mod edit -replace github.com/mudler/go-piper=$(CURDIR)/sources/go-piper
 	$(GOCMD) mod edit -replace github.com/mudler/go-stable-diffusion=$(CURDIR)/sources/go-stable-diffusion
 	$(GOCMD) mod edit -replace github.com/nomic-ai/gpt4all/gpt4all-bindings/golang=$(CURDIR)/sources/gpt4all/gpt4all-bindings/golang
+	$(GOCMD) mod edit -replace github.com/go-skynet/go-llama.cpp=$(CURDIR)/sources/go-llama.cpp
 
 dropreplace:
 	$(GOCMD) mod edit -dropreplace github.com/donomii/go-rwkv.cpp
@@ -271,12 +276,12 @@ prepare-sources: get-sources replace
 ## GENERIC
 rebuild: ## Rebuilds the project
 	$(GOCMD) clean -cache
-	$(MAKE) -C sources/go-llama-ggml clean
+	$(MAKE) -C sources/go-llama.cpp clean
 	$(MAKE) -C sources/gpt4all/gpt4all-bindings/golang/ clean
-	$(MAKE) -C sources/go-rwkv clean
+	$(MAKE) -C sources/go-rwkv.cpp clean
 	$(MAKE) -C sources/whisper.cpp clean
 	$(MAKE) -C sources/go-stable-diffusion clean
-	$(MAKE) -C sources/go-bert clean
+	$(MAKE) -C sources/go-bert.cpp clean
 	$(MAKE) -C sources/go-piper clean
 	$(MAKE) -C sources/go-tiny-dream clean
 	$(MAKE) build
@@ -289,10 +294,13 @@ clean: ## Remove build related file
 	rm -rf ./sources
 	rm -rf $(BINARY_NAME)
 	rm -rf release/
-	rm -rf backend-assets
+	rm -rf backend-assets/*
 	$(MAKE) -C backend/cpp/grpc clean
 	$(MAKE) -C backend/cpp/llama clean
+	rm -rf backend/cpp/llama-* || true
 	$(MAKE) dropreplace
+	$(MAKE) protogen-clean
+	rmdir pkg/grpc/proto || true
 
 clean-tests:
 	rm -rf test-models
@@ -308,14 +316,31 @@ build: prepare backend-assets grpcs ## Build the project
 	CGO_LDFLAGS="$(CGO_LDFLAGS)" $(GOCMD) build -ldflags "$(LD_FLAGS)" -tags "$(GO_TAGS)" -o $(BINARY_NAME) ./
 
 build-minimal:
-	BUILD_GRPC_FOR_BACKEND_LLAMA=true GRPC_BACKENDS=backend-assets/grpc/llama-cpp GO_TAGS=none $(MAKE) build
+	BUILD_GRPC_FOR_BACKEND_LLAMA=true GRPC_BACKENDS="backend-assets/grpc/llama-cpp-avx2" GO_TAGS=none $(MAKE) build
 
 build-api:
 	BUILD_GRPC_FOR_BACKEND_LLAMA=true BUILD_API_ONLY=true GO_TAGS=none $(MAKE) build
 
-dist: build
+dist:
+	STATIC=true $(MAKE) backend-assets/grpc/llama-cpp-avx2
+ifeq ($(OS),Darwin)
+	$(info ${GREEN}I Skip CUDA build on MacOS${RESET})
+else
+	$(MAKE) backend-assets/grpc/llama-cpp-cuda
+	$(MAKE) backend-assets/grpc/llama-cpp-hipblas
+	$(MAKE) backend-assets/grpc/llama-cpp-sycl_f16
+	$(MAKE) backend-assets/grpc/llama-cpp-sycl_f32
+endif
+	$(MAKE) build
 	mkdir -p release
+# if BUILD_ID is empty, then we don't append it to the binary name
+ifeq ($(BUILD_ID),)
+	cp $(BINARY_NAME) release/$(BINARY_NAME)-$(OS)-$(ARCH)
+	shasum -a 256 release/$(BINARY_NAME)-$(OS)-$(ARCH) > release/$(BINARY_NAME)-$(OS)-$(ARCH).sha256
+else
 	cp $(BINARY_NAME) release/$(BINARY_NAME)-$(BUILD_ID)-$(OS)-$(ARCH)
+	shasum -a 256 release/$(BINARY_NAME)-$(BUILD_ID)-$(OS)-$(ARCH) > release/$(BINARY_NAME)-$(BUILD_ID)-$(OS)-$(ARCH).sha256
+endif
 
 osx-signed: build
 	codesign --deep --force --sign "$(OSX_SIGNING_IDENTITY)" --entitlements "./Entitlements.plist" "./$(BINARY_NAME)"
@@ -416,30 +441,160 @@ help: ## Show this help.
 		else if (/^## .*$$/) {printf "  ${CYAN}%s${RESET}\n", substr($$1,4)} \
 		}' $(MAKEFILE_LIST)
 
+.PHONY: protogen
 protogen: protogen-go protogen-python
 
+.PHONY: protogen-clean
+protogen-clean: protogen-go-clean protogen-python-clean
+
+.PHONY: protogen-go
 protogen-go:
-	protoc -Ibackend/ --go_out=pkg/grpc/proto/ --go_opt=paths=source_relative --go-grpc_out=pkg/grpc/proto/ --go-grpc_opt=paths=source_relative \
+	mkdir -p pkg/grpc/proto
+	protoc --experimental_allow_proto3_optional -Ibackend/ --go_out=pkg/grpc/proto/ --go_opt=paths=source_relative --go-grpc_out=pkg/grpc/proto/ --go-grpc_opt=paths=source_relative \
     backend/backend.proto
 
-protogen-python:
-	python3 -m grpc_tools.protoc -Ibackend/ --python_out=backend/python/sentencetransformers/ --grpc_python_out=backend/python/sentencetransformers/ backend/backend.proto
-	python3 -m grpc_tools.protoc -Ibackend/ --python_out=backend/python/transformers/ --grpc_python_out=backend/python/transformers/ backend/backend.proto
-	python3 -m grpc_tools.protoc -Ibackend/ --python_out=backend/python/transformers-musicgen/ --grpc_python_out=backend/python/transformers-musicgen/ backend/backend.proto
-	python3 -m grpc_tools.protoc -Ibackend/ --python_out=backend/python/autogptq/ --grpc_python_out=backend/python/autogptq/ backend/backend.proto
-	python3 -m grpc_tools.protoc -Ibackend/ --python_out=backend/python/exllama/ --grpc_python_out=backend/python/exllama/ backend/backend.proto
-	python3 -m grpc_tools.protoc -Ibackend/ --python_out=backend/python/bark/ --grpc_python_out=backend/python/bark/ backend/backend.proto
-	python3 -m grpc_tools.protoc -Ibackend/ --python_out=backend/python/diffusers/ --grpc_python_out=backend/python/diffusers/ backend/backend.proto
-	python3 -m grpc_tools.protoc -Ibackend/ --python_out=backend/python/coqui/ --grpc_python_out=backend/python/coqui/ backend/backend.proto
-	python3 -m grpc_tools.protoc -Ibackend/ --python_out=backend/python/vall-e-x/ --grpc_python_out=backend/python/vall-e-x/ backend/backend.proto
-	python3 -m grpc_tools.protoc -Ibackend/ --python_out=backend/python/vllm/ --grpc_python_out=backend/python/vllm/ backend/backend.proto
-	python3 -m grpc_tools.protoc -Ibackend/ --python_out=backend/python/petals/ --grpc_python_out=backend/python/petals/ backend/backend.proto
-	python3 -m grpc_tools.protoc -Ibackend/ --python_out=backend/python/mamba/ --grpc_python_out=backend/python/mamba/ backend/backend.proto
-	python3 -m grpc_tools.protoc -Ibackend/ --python_out=backend/python/exllama2/ --grpc_python_out=backend/python/exllama2/ backend/backend.proto
+.PHONY: protogen-go-clean
+protogen-go-clean:
+	$(RM) pkg/grpc/proto/backend.pb.go pkg/grpc/proto/backend_grpc.pb.go
+	$(RM) bin/*
+
+.PHONY: protogen-python
+protogen-python: autogptq-protogen bark-protogen coqui-protogen diffusers-protogen exllama-protogen exllama2-protogen mamba-protogen petals-protogen rerankers-protogen sentencetransformers-protogen transformers-protogen parler-tts-protogen transformers-musicgen-protogen vall-e-x-protogen vllm-protogen openvoice-protogen
+
+.PHONY: protogen-python-clean
+protogen-python-clean: autogptq-protogen-clean bark-protogen-clean coqui-protogen-clean diffusers-protogen-clean exllama-protogen-clean exllama2-protogen-clean mamba-protogen-clean petals-protogen-clean sentencetransformers-protogen-clean rerankers-protogen-clean transformers-protogen-clean transformers-musicgen-protogen-clean parler-tts-protogen-clean vall-e-x-protogen-clean vllm-protogen-clean openvoice-protogen-clean
+
+.PHONY: autogptq-protogen
+autogptq-protogen:
+	$(MAKE) -C backend/python/autogptq protogen
+
+.PHONY: autogptq-protogen-clean
+autogptq-protogen-clean:
+	$(MAKE) -C backend/python/autogptq protogen-clean
+
+.PHONY: bark-protogen
+bark-protogen:
+	$(MAKE) -C backend/python/bark protogen
+
+.PHONY: bark-protogen-clean
+bark-protogen-clean:
+	$(MAKE) -C backend/python/bark protogen-clean
+
+.PHONY: coqui-protogen
+coqui-protogen:
+	$(MAKE) -C backend/python/coqui protogen
+
+.PHONY: coqui-protogen-clean
+coqui-protogen-clean:
+	$(MAKE) -C backend/python/coqui protogen-clean
+
+.PHONY: diffusers-protogen
+diffusers-protogen:
+	$(MAKE) -C backend/python/diffusers protogen
+
+.PHONY: diffusers-protogen-clean
+diffusers-protogen-clean:
+	$(MAKE) -C backend/python/diffusers protogen-clean
+
+.PHONY: exllama-protogen
+exllama-protogen:
+	$(MAKE) -C backend/python/exllama protogen
+
+.PHONY: exllama-protogen-clean
+exllama-protogen-clean:
+	$(MAKE) -C backend/python/exllama protogen-clean
+
+.PHONY: exllama2-protogen
+exllama2-protogen:
+	$(MAKE) -C backend/python/exllama2 protogen
+
+.PHONY: exllama2-protogen-clean
+exllama2-protogen-clean:
+	$(MAKE) -C backend/python/exllama2 protogen-clean
+
+.PHONY: mamba-protogen
+mamba-protogen:
+	$(MAKE) -C backend/python/mamba protogen
+
+.PHONY: mamba-protogen-clean
+mamba-protogen-clean:
+	$(MAKE) -C backend/python/mamba protogen-clean
+
+.PHONY: petals-protogen
+petals-protogen:
+	$(MAKE) -C backend/python/petals protogen
+
+.PHONY: petals-protogen-clean
+petals-protogen-clean:
+	$(MAKE) -C backend/python/petals protogen-clean
+
+.PHONY: rerankers-protogen
+rerankers-protogen:
+	$(MAKE) -C backend/python/rerankers protogen
+
+.PHONY: rerankers-protogen-clean
+rerankers-protogen-clean:
+	$(MAKE) -C backend/python/rerankers protogen-clean
+
+.PHONY: sentencetransformers-protogen
+sentencetransformers-protogen:
+	$(MAKE) -C backend/python/sentencetransformers protogen
+
+.PHONY: sentencetransformers-protogen-clean
+sentencetransformers-protogen-clean:
+	$(MAKE) -C backend/python/sentencetransformers protogen-clean
+
+.PHONY: transformers-protogen
+transformers-protogen:
+	$(MAKE) -C backend/python/transformers protogen
+
+.PHONY: transformers-protogen-clean
+transformers-protogen-clean:
+	$(MAKE) -C backend/python/transformers protogen-clean
+
+.PHONY: parler-tts-protogen
+parler-tts-protogen:
+	$(MAKE) -C backend/python/parler-tts protogen
+
+.PHONY: parler-tts-protogen-clean
+parler-tts-protogen-clean:
+	$(MAKE) -C backend/python/parler-tts protogen-clean
+
+.PHONY: transformers-musicgen-protogen
+transformers-musicgen-protogen:
+	$(MAKE) -C backend/python/transformers-musicgen protogen
+
+.PHONY: transformers-musicgen-protogen-clean
+transformers-musicgen-protogen-clean:
+	$(MAKE) -C backend/python/transformers-musicgen protogen-clean
+
+.PHONY: vall-e-x-protogen
+vall-e-x-protogen:
+	$(MAKE) -C backend/python/vall-e-x protogen
+
+.PHONY: vall-e-x-protogen-clean
+vall-e-x-protogen-clean:
+	$(MAKE) -C backend/python/vall-e-x protogen-clean
+
+.PHONY: openvoice-protogen
+openvoice-protogen:
+	$(MAKE) -C backend/python/openvoice protogen
+
+.PHONY: openvoice-protogen-clean
+openvoice-protogen-clean:
+	$(MAKE) -C backend/python/openvoice protogen-clean
+
+.PHONY: vllm-protogen
+vllm-protogen:
+	$(MAKE) -C backend/python/vllm protogen
+
+.PHONY: vllm-protogen-clean
+vllm-protogen-clean:
+	$(MAKE) -C backend/python/vllm protogen-clean
 
 ## GRPC
 # Note: it is duplicated in the Dockerfile
-prepare-extra-conda-environments:
+prepare-extra-conda-environments: protogen-python
 	$(MAKE) -C backend/python/autogptq
 	$(MAKE) -C backend/python/bark
 	$(MAKE) -C backend/python/coqui
@@ -447,14 +602,17 @@ prepare-extra-conda-environments:
 	$(MAKE) -C backend/python/vllm
 	$(MAKE) -C backend/python/mamba
 	$(MAKE) -C backend/python/sentencetransformers
+	$(MAKE) -C backend/python/rerankers
 	$(MAKE) -C backend/python/transformers
 	$(MAKE) -C backend/python/transformers-musicgen
+	$(MAKE) -C backend/python/parler-tts
 	$(MAKE) -C backend/python/vall-e-x
+	$(MAKE) -C backend/python/openvoice
 	$(MAKE) -C backend/python/exllama
 	$(MAKE) -C backend/python/petals
 	$(MAKE) -C backend/python/exllama2
 
-prepare-test-extra:
+prepare-test-extra: protogen-python
 	$(MAKE) -C backend/python/transformers
 	$(MAKE) -C backend/python/diffusers
 
@@ -478,19 +636,19 @@ backend-assets/gpt4all: sources/gpt4all sources/gpt4all/gpt4all-bindings/golang/
 	@cp sources/gpt4all/gpt4all-bindings/golang/buildllm/*.dylib backend-assets/gpt4all/ || true
 	@cp sources/gpt4all/gpt4all-bindings/golang/buildllm/*.dll backend-assets/gpt4all/ || true
 
-backend-assets/grpc: replace
+backend-assets/grpc: protogen-go replace
 	mkdir -p backend-assets/grpc
 
-backend-assets/grpc/bert-embeddings: sources/go-bert sources/go-bert/libgobert.a backend-assets/grpc
-	CGO_LDFLAGS="$(CGO_LDFLAGS)" C_INCLUDE_PATH=$(CURDIR)/sources/go-bert LIBRARY_PATH=$(CURDIR)/sources/go-bert \
+backend-assets/grpc/bert-embeddings: sources/go-bert.cpp sources/go-bert.cpp/libgobert.a backend-assets/grpc
+	CGO_LDFLAGS="$(CGO_LDFLAGS)" C_INCLUDE_PATH=$(CURDIR)/sources/go-bert.cpp LIBRARY_PATH=$(CURDIR)/sources/go-bert.cpp \
 	$(GOCMD) build -ldflags "$(LD_FLAGS)" -tags "$(GO_TAGS)" -o backend-assets/grpc/bert-embeddings ./backend/go/llm/bert/
 
 backend-assets/grpc/gpt4all: sources/gpt4all sources/gpt4all/gpt4all-bindings/golang/libgpt4all.a backend-assets/gpt4all backend-assets/grpc
 	CGO_LDFLAGS="$(CGO_LDFLAGS)" C_INCLUDE_PATH=$(CURDIR)/sources/gpt4all/gpt4all-bindings/golang/ LIBRARY_PATH=$(CURDIR)/sources/gpt4all/gpt4all-bindings/golang/ \
 	$(GOCMD) build -ldflags "$(LD_FLAGS)" -tags "$(GO_TAGS)" -o backend-assets/grpc/gpt4all ./backend/go/llm/gpt4all/
 
-backend-assets/grpc/langchain-huggingface: backend-assets/grpc
-	$(GOCMD) build -ldflags "$(LD_FLAGS)" -tags "$(GO_TAGS)" -o backend-assets/grpc/langchain-huggingface ./backend/go/llm/langchain/
+backend-assets/grpc/huggingface: backend-assets/grpc
+	$(GOCMD) build -ldflags "$(LD_FLAGS)" -tags "$(GO_TAGS)" -o backend-assets/grpc/huggingface ./backend/go/llm/langchain/
 
 backend/cpp/llama/llama.cpp:
 	LLAMA_VERSION=$(CPPLLAMA_VERSION) $(MAKE) -C backend/cpp/llama llama.cpp
@@ -502,7 +660,7 @@ ADDED_CMAKE_ARGS=-Dabsl_DIR=${INSTALLED_LIB_CMAKE}/absl \
 				 -Dutf8_range_DIR=${INSTALLED_LIB_CMAKE}/utf8_range \
 				 -DgRPC_DIR=${INSTALLED_LIB_CMAKE}/grpc \
 				 -DCMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES=${INSTALLED_PACKAGES}/include
-backend/cpp/llama/grpc-server:
+build-llama-cpp-grpc-server:
 # Conditionally build grpc for the llama backend to use if needed
 ifdef BUILD_GRPC_FOR_BACKEND_LLAMA
 	$(MAKE) -C backend/cpp/grpc build
@@ -511,30 +669,94 @@ ifdef BUILD_GRPC_FOR_BACKEND_LLAMA
 	PATH="${INSTALLED_PACKAGES}/bin:${PATH}" \
 	CMAKE_ARGS="${CMAKE_ARGS} ${ADDED_CMAKE_ARGS}" \
 	LLAMA_VERSION=$(CPPLLAMA_VERSION) \
-	$(MAKE) -C backend/cpp/llama grpc-server
+	$(MAKE) -C backend/cpp/${VARIANT} grpc-server
 else
 	echo "BUILD_GRPC_FOR_BACKEND_LLAMA is not defined."
-	LLAMA_VERSION=$(CPPLLAMA_VERSION) $(MAKE) -C backend/cpp/llama grpc-server
+	LLAMA_VERSION=$(CPPLLAMA_VERSION) $(MAKE) -C backend/cpp/${VARIANT} grpc-server
 endif
 
-backend-assets/grpc/llama-cpp: backend-assets/grpc backend/cpp/llama/grpc-server
-	cp -rfv backend/cpp/llama/grpc-server backend-assets/grpc/llama-cpp
+# This target is for manually building a variant with-auto detected flags
+backend-assets/grpc/llama-cpp: backend-assets/grpc
+	cp -rf backend/cpp/llama backend/cpp/llama-cpp
+	$(MAKE) -C backend/cpp/llama-cpp purge
+	$(info ${GREEN}I llama-cpp build info:avx2${RESET})
+	$(MAKE) VARIANT="llama-cpp" build-llama-cpp-grpc-server
+	cp -rfv backend/cpp/llama-cpp/grpc-server backend-assets/grpc/llama-cpp
+
+backend-assets/grpc/llama-cpp-avx2: backend-assets/grpc
+	cp -rf backend/cpp/llama backend/cpp/llama-avx2
+	$(MAKE) -C backend/cpp/llama-avx2 purge
+	$(info ${GREEN}I llama-cpp build info:avx2${RESET})
+	CMAKE_ARGS="$(CMAKE_ARGS) -DLLAMA_AVX=on -DLLAMA_AVX2=on -DLLAMA_AVX512=off -DLLAMA_FMA=on -DLLAMA_F16C=on" $(MAKE) VARIANT="llama-avx2" build-llama-cpp-grpc-server
+	cp -rfv backend/cpp/llama-avx2/grpc-server backend-assets/grpc/llama-cpp-avx2
+
+backend-assets/grpc/llama-cpp-avx: backend-assets/grpc
+	cp -rf backend/cpp/llama backend/cpp/llama-avx
+	$(MAKE) -C backend/cpp/llama-avx purge
+	$(info ${GREEN}I llama-cpp build info:avx${RESET})
+	CMAKE_ARGS="$(CMAKE_ARGS) -DLLAMA_AVX=on -DLLAMA_AVX2=off -DLLAMA_AVX512=off -DLLAMA_FMA=off -DLLAMA_F16C=off" $(MAKE) VARIANT="llama-avx" build-llama-cpp-grpc-server
+	cp -rfv backend/cpp/llama-avx/grpc-server backend-assets/grpc/llama-cpp-avx
+
+backend-assets/grpc/llama-cpp-fallback: backend-assets/grpc
+	cp -rf backend/cpp/llama backend/cpp/llama-fallback
+	$(MAKE) -C backend/cpp/llama-fallback purge
+	$(info ${GREEN}I llama-cpp build info:fallback${RESET})
+	CMAKE_ARGS="$(CMAKE_ARGS) -DLLAMA_AVX=off -DLLAMA_AVX2=off -DLLAMA_AVX512=off -DLLAMA_FMA=off -DLLAMA_F16C=off" $(MAKE) VARIANT="llama-fallback" build-llama-cpp-grpc-server
+	cp -rfv backend/cpp/llama-fallback/grpc-server backend-assets/grpc/llama-cpp-fallback
 # TODO: every binary should have its own folder instead, so can have different metal implementations
 ifeq ($(BUILD_TYPE),metal)
-	cp backend/cpp/llama/llama.cpp/build/bin/default.metallib backend-assets/grpc/
+	cp backend/cpp/llama-fallback/llama.cpp/build/bin/default.metallib backend-assets/grpc/
 endif
 
-backend-assets/grpc/llama-ggml: sources/go-llama-ggml sources/go-llama-ggml/libbinding.a backend-assets/grpc
-	$(GOCMD) mod edit -replace github.com/go-skynet/go-llama.cpp=$(CURDIR)/sources/go-llama-ggml
-	CGO_LDFLAGS="$(CGO_LDFLAGS)" C_INCLUDE_PATH=$(CURDIR)/sources/go-llama-ggml LIBRARY_PATH=$(CURDIR)/sources/go-llama-ggml \
+backend-assets/grpc/llama-cpp-cuda: backend-assets/grpc
+	cp -rf backend/cpp/llama backend/cpp/llama-cuda
+	$(MAKE) -C backend/cpp/llama-cuda purge
+	$(info ${GREEN}I llama-cpp build info:cuda${RESET})
+	CMAKE_ARGS="$(CMAKE_ARGS) -DLLAMA_AVX=on -DLLAMA_AVX2=off -DLLAMA_AVX512=off -DLLAMA_FMA=off -DLLAMA_F16C=off -DLLAMA_CUDA=ON" $(MAKE) VARIANT="llama-cuda" build-llama-cpp-grpc-server
+	cp -rfv backend/cpp/llama-cuda/grpc-server backend-assets/grpc/llama-cpp-cuda
+
+backend-assets/grpc/llama-cpp-hipblas: backend-assets/grpc
+	cp -rf backend/cpp/llama backend/cpp/llama-hipblas
+	$(MAKE) -C backend/cpp/llama-hipblas purge
+	$(info ${GREEN}I llama-cpp build info:hipblas${RESET})
+	BUILD_TYPE="hipblas" $(MAKE) VARIANT="llama-hipblas" build-llama-cpp-grpc-server
+	cp -rfv backend/cpp/llama-hipblas/grpc-server backend-assets/grpc/llama-cpp-hipblas
+
+backend-assets/grpc/llama-cpp-sycl_f16: backend-assets/grpc
+	cp -rf backend/cpp/llama backend/cpp/llama-sycl_f16
+	$(MAKE) -C backend/cpp/llama-sycl_f16 purge
+	$(info ${GREEN}I llama-cpp build info:sycl_f16${RESET})
+	BUILD_TYPE="sycl_f16" $(MAKE) VARIANT="llama-sycl_f16" build-llama-cpp-grpc-server
+	cp -rfv backend/cpp/llama-sycl_f16/grpc-server backend-assets/grpc/llama-cpp-sycl_f16
+
+backend-assets/grpc/llama-cpp-sycl_f32: backend-assets/grpc
+	cp -rf backend/cpp/llama backend/cpp/llama-sycl_f32
+	$(MAKE) -C backend/cpp/llama-sycl_f32 purge
+	$(info ${GREEN}I llama-cpp build info:sycl_f32${RESET})
+	BUILD_TYPE="sycl_f32" $(MAKE) VARIANT="llama-sycl_f32" build-llama-cpp-grpc-server
+	cp -rfv backend/cpp/llama-sycl_f32/grpc-server backend-assets/grpc/llama-cpp-sycl_f32
+
+backend-assets/grpc/llama-cpp-grpc: backend-assets/grpc
+	cp -rf backend/cpp/llama backend/cpp/llama-grpc
+	$(MAKE) -C backend/cpp/llama-grpc purge
+	$(info ${GREEN}I llama-cpp build info:grpc${RESET})
+	CMAKE_ARGS="$(CMAKE_ARGS) -DLLAMA_RPC=ON -DLLAMA_AVX=off -DLLAMA_AVX2=off -DLLAMA_AVX512=off -DLLAMA_FMA=off -DLLAMA_F16C=off" $(MAKE) VARIANT="llama-grpc" build-llama-cpp-grpc-server
+	cp -rfv backend/cpp/llama-grpc/grpc-server backend-assets/grpc/llama-cpp-grpc
+
+backend-assets/util/llama-cpp-rpc-server: backend-assets/grpc/llama-cpp-grpc
+	mkdir -p backend-assets/util/
+	cp -rf backend/cpp/llama-grpc/llama.cpp/build/bin/rpc-server backend-assets/util/llama-cpp-rpc-server
+
+backend-assets/grpc/llama-ggml: sources/go-llama.cpp sources/go-llama.cpp/libbinding.a backend-assets/grpc
+	CGO_LDFLAGS="$(CGO_LDFLAGS)" C_INCLUDE_PATH=$(CURDIR)/sources/go-llama.cpp LIBRARY_PATH=$(CURDIR)/sources/go-llama.cpp \
 	$(GOCMD) build -ldflags "$(LD_FLAGS)" -tags "$(GO_TAGS)" -o backend-assets/grpc/llama-ggml ./backend/go/llm/llama-ggml/
 
 backend-assets/grpc/piper: sources/go-piper sources/go-piper/libpiper_binding.a backend-assets/grpc backend-assets/espeak-ng-data
 	CGO_CXXFLAGS="$(PIPER_CGO_CXXFLAGS)" CGO_LDFLAGS="$(PIPER_CGO_LDFLAGS)" LIBRARY_PATH=$(CURDIR)/sources/go-piper \
 	$(GOCMD) build -ldflags "$(LD_FLAGS)" -tags "$(GO_TAGS)" -o backend-assets/grpc/piper ./backend/go/tts/
 
-backend-assets/grpc/rwkv: sources/go-rwkv sources/go-rwkv/librwkv.a backend-assets/grpc
-	CGO_LDFLAGS="$(CGO_LDFLAGS)" C_INCLUDE_PATH=$(CURDIR)/sources/go-rwkv LIBRARY_PATH=$(CURDIR)/sources/go-rwkv \
+backend-assets/grpc/rwkv: sources/go-rwkv.cpp sources/go-rwkv.cpp/librwkv.a backend-assets/grpc
+	CGO_LDFLAGS="$(CGO_LDFLAGS)" C_INCLUDE_PATH=$(CURDIR)/sources/go-rwkv.cpp LIBRARY_PATH=$(CURDIR)/sources/go-rwkv.cpp \
 	$(GOCMD) build -ldflags "$(LD_FLAGS)" -tags "$(GO_TAGS)" -o backend-assets/grpc/rwkv ./backend/go/llm/rwkv
 
 backend-assets/grpc/stablediffusion: sources/go-stable-diffusion sources/go-stable-diffusion/libstablediffusion.a backend-assets/grpc
@@ -567,7 +789,7 @@ docker:
 		--build-arg MAKEFLAGS="$(DOCKER_MAKEFLAGS)" \
 		--build-arg BUILD_TYPE=$(BUILD_TYPE) \
 		-t $(DOCKER_IMAGE) .
-	
+
 docker-aio:
 	@echo "Building AIO image with base $(BASE_IMAGE) as $(DOCKER_AIO_IMAGE)"
 	docker build \
@@ -581,7 +803,7 @@ docker-aio-all:
 
 docker-image-intel:
 	docker build \
-		--build-arg BASE_IMAGE=intel/oneapi-basekit:2024.0.1-devel-ubuntu22.04 \
+		--build-arg BASE_IMAGE=intel/oneapi-basekit:2024.1.0-devel-ubuntu22.04 \
 		--build-arg IMAGE_TYPE=$(IMAGE_TYPE) \
 		--build-arg GO_TAGS="none" \
 		--build-arg MAKEFLAGS="$(DOCKER_MAKEFLAGS)" \
@@ -589,7 +811,7 @@ docker-image-intel:
 
 docker-image-intel-xpu:
 	docker build \
-		--build-arg BASE_IMAGE=intel/oneapi-basekit:2024.0.1-devel-ubuntu22.04 \
+		--build-arg BASE_IMAGE=intel/oneapi-basekit:2024.1.0-devel-ubuntu22.04 \
 		--build-arg IMAGE_TYPE=$(IMAGE_TYPE) \
 		--build-arg GO_TAGS="none" \
 		--build-arg MAKEFLAGS="$(DOCKER_MAKEFLAGS)" \
@@ -597,4 +819,8 @@ docker-image-intel-xpu:
 
 .PHONY: swagger
 swagger:
-	swag init -g core/http/api.go --output swagger
+	swag init -g core/http/app.go --output swagger
+
+.PHONY: gen-assets
+gen-assets:
+	$(GOCMD) run core/dependencies_manager/manager.go embedded/webui_static.yaml core/http/static/assets

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-skynet/LocalAI/pkg/gallery"
+	"github.com/go-skynet/LocalAI/pkg/xsysinfo"
 	"github.com/rs/zerolog/log"
 )
 
@@ -15,18 +16,22 @@ type ApplicationConfig struct {
 	ConfigFile                          string
 	ModelPath                           string
 	UploadLimitMB, Threads, ContextSize int
-	DisableWelcomePage                  bool
+	DisableWebUI                        bool
 	F16                                 bool
-	Debug, DisableMessage               bool
+	Debug                               bool
 	ImageDir                            string
 	AudioDir                            string
 	UploadDir                           string
 	ConfigsDir                          string
+	DynamicConfigsDir                   string
+	DynamicConfigsDirPollInterval       time.Duration
 	CORS                                bool
+	CSRF                                bool
 	PreloadJSONModels                   string
 	PreloadModelsFromPath               string
 	CORSAllowOrigins                    string
 	ApiKeys                             []string
+	OpaqueErrors                        bool
 
 	ModelLibraryURL string
 
@@ -55,12 +60,10 @@ type AppOption func(*ApplicationConfig)
 
 func NewApplicationConfig(o ...AppOption) *ApplicationConfig {
 	opt := &ApplicationConfig{
-		Context:        context.Background(),
-		UploadLimitMB:  15,
-		Threads:        1,
-		ContextSize:    512,
-		Debug:          true,
-		DisableMessage: true,
+		Context:       context.Background(),
+		UploadLimitMB: 15,
+		ContextSize:   512,
+		Debug:         true,
 	}
 	for _, oo := range o {
 		oo(opt)
@@ -86,6 +89,12 @@ func WithCors(b bool) AppOption {
 	}
 }
 
+func WithCsrf(b bool) AppOption {
+	return func(o *ApplicationConfig) {
+		o.CSRF = b
+	}
+}
+
 func WithModelLibraryURL(url string) AppOption {
 	return func(o *ApplicationConfig) {
 		o.ModelLibraryURL = url
@@ -106,8 +115,8 @@ var EnableWatchDogBusyCheck = func(o *ApplicationConfig) {
 	o.WatchDogBusy = true
 }
 
-var DisableWelcomePage = func(o *ApplicationConfig) {
-	o.DisableWelcomePage = true
+var DisableWebUI = func(o *ApplicationConfig) {
+	o.DisableWebUI = true
 }
 
 func SetWatchDogBusyTimeout(t time.Duration) AppOption {
@@ -212,6 +221,9 @@ func WithUploadLimitMB(limit int) AppOption {
 
 func WithThreads(threads int) AppOption {
 	return func(o *ApplicationConfig) {
+		if threads == 0 { // 0 is not allowed
+			threads = xsysinfo.CPUPhysicalCores()
+		}
 		o.Threads = threads
 	}
 }
@@ -231,12 +243,6 @@ func WithF16(f16 bool) AppOption {
 func WithDebug(debug bool) AppOption {
 	return func(o *ApplicationConfig) {
 		o.Debug = debug
-	}
-}
-
-func WithDisableMessage(disableMessage bool) AppOption {
-	return func(o *ApplicationConfig) {
-		o.DisableMessage = disableMessage
 	}
 }
 
@@ -264,9 +270,27 @@ func WithConfigsDir(configsDir string) AppOption {
 	}
 }
 
+func WithDynamicConfigDir(dynamicConfigsDir string) AppOption {
+	return func(o *ApplicationConfig) {
+		o.DynamicConfigsDir = dynamicConfigsDir
+	}
+}
+
+func WithDynamicConfigDirPollInterval(interval time.Duration) AppOption {
+	return func(o *ApplicationConfig) {
+		o.DynamicConfigsDirPollInterval = interval
+	}
+}
+
 func WithApiKeys(apiKeys []string) AppOption {
 	return func(o *ApplicationConfig) {
 		o.ApiKeys = apiKeys
+	}
+}
+
+func WithOpaqueErrors(opaque bool) AppOption {
+	return func(o *ApplicationConfig) {
+		o.OpaqueErrors = opaque
 	}
 }
 
@@ -282,6 +306,7 @@ func (o *ApplicationConfig) ToConfigLoaderOptions() []ConfigLoaderOption {
 		LoadOptionDebug(o.Debug),
 		LoadOptionF16(o.F16),
 		LoadOptionThreads(o.Threads),
+		ModelPath(o.ModelPath),
 	}
 }
 

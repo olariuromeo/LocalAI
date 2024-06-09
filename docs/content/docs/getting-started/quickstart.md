@@ -30,7 +30,7 @@ Before you begin, ensure you have a container engine installed if you are not us
 
 > _Do you have already a model file? Skip to [Run models manually]({{%relref "docs/getting-started/manual" %}}) or [Run other models]({{%relref "docs/getting-started/run-other-models" %}}) to use an already-configured model_.
 
-LocalAI's All-in-One (AIO) images are pre-configured with a set of models and backends to fully leverage almost all the LocalAI featureset. 
+LocalAI's All-in-One (AIO) images are pre-configured with a set of models and backends to fully leverage almost all the LocalAI featureset. If you don't need models pre-configured, you can use the standard [images]({{%relref "docs/getting-started/container-images" %}}).
 
 These images are available for both CPU and GPU environments. The AIO images are designed to be easy to use and requires no configuration.
 
@@ -91,7 +91,7 @@ services:
     #           capabilities: [gpu]
 ```
 
-For a list of all the container-images available, see [Container images]({{%relref "docs/reference/container-images" %}}). To learn more about All-in-one images instead, see [All-in-one Images]({{%relref "docs/reference/aio-images" %}}).
+For a list of all the container-images available, see [Container images]({{%relref "docs/getting-started/container-images" %}}). To learn more about All-in-one images instead, see [All-in-one Images]({{%relref "docs/getting-started/container-images" %}}).
 
 {{% alert icon="💡" %}}
 
@@ -114,9 +114,29 @@ docker run -p 8080:8080 --name local-ai -ti -v localai-models:/build/models loca
 
 {{% /alert %}}
 
+## Running LocalAI from Binaries
+
+LocalAI binaries are available for both Linux and MacOS platforms and can be executed directly from your command line. These binaries are continuously updated and hosted on [our GitHub Releases page](https://github.com/mudler/LocalAI/releases). This method also supports Windows users via the Windows Subsystem for Linux (WSL). 
+
+Use the following one-liner command in your terminal to download and run LocalAI on Linux or MacOS:
+
+```bash
+curl -Lo local-ai "https://github.com/mudler/LocalAI/releases/download/{{< version >}}/local-ai-$(uname -s)-$(uname -m)" && chmod +x local-ai && ./local-ai
+```
+
+Otherwise, here are the links to the binaries:
+
+| OS | Link | 
+| --- | --- |
+| Linux  | [Download](https://github.com/mudler/LocalAI/releases/download/{{< version >}}/local-ai-Linux-x86_64) |
+| MacOS  | [Download](https://github.com/mudler/LocalAI/releases/download/{{< version >}}/local-ai-Darwin-arm64) |
+
+
 ## Try it out
 
-LocalAI does not ship a webui by default, however you can use 3rd party projects to interact with it (see also [Integrations]({{%relref "docs/integrations" %}}) ). However, you can test out the API endpoints using `curl`, you can find few examples below.
+Connect to LocalAI, by default the WebUI should be accessible from http://localhost:8080 . You can also use 3rd party projects to interact with LocalAI as you would use OpenAI (see also [Integrations]({{%relref "docs/integrations" %}}) ). 
+
+You can also test out the API endpoints using `curl`, examples below.
 
 ### Text Generation
 
@@ -169,7 +189,7 @@ Call functions
 <details>
 
 ```bash
-curl https://localhost:8080/v1/chat/completions \
+curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4",
@@ -300,6 +320,6 @@ Explore further resources and community contributions:
 - [Build LocalAI and the container image]({{%relref "docs/getting-started/build" %}})
 - [Run models manually]({{%relref "docs/getting-started/manual" %}})
 - [Run other models]({{%relref "docs/getting-started/run-other-models" %}})
-- [Container images]({{%relref "docs/reference/container-images" %}})
-- [All-in-one Images]({{%relref "docs/reference/aio-images" %}})
+- [Container images]({{%relref "docs/getting-started/container-images" %}})
+- [All-in-one Images]({{%relref "docs/getting-started/container-images" %}})
 - [Examples](https://github.com/mudler/LocalAI/tree/master/examples#examples)

@@ -36,14 +36,28 @@ To install the dependencies follow the instructions below:
 Install `xcode` from the App Store
 
 ```bash
-brew install abseil cmake go grpc protobuf wget
+brew install abseil cmake go grpc protobuf protoc-gen-go protoc-gen-go-grpc python wget
+```
+
+After installing the above dependencies, you need to install grpcio-tools from PyPI. You could do this via a pip --user install or a virtualenv.
+
+```bash
+pip install --user grpcio-tools
 ```
 
 {{% /tab %}}
 {{% tab tabName="Debian" %}}
 
 ```bash
-apt install golang protobuf-compiler-grpc libgrpc-dev make cmake
+apt install cmake golang libgrpc-dev make protobuf-compiler-grpc python3-grpc-tools
+```
+
+After you have golang installed and working, you can install the required binaries for compiling the golang protobuf components via the following commands
+
+```bash
+go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.0
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@8ba23be9613c672d40ae261d2a1335d639bdd59b
+
 ```
 
 {{% /tab %}}
@@ -130,7 +144,7 @@ Install `xcode` from the Apps Store (needed for metalkit)
 
 ```
 # install build dependencies
-brew install abseil cmake go grpc protobuf wget
+brew install abseil cmake go grpc protobuf wget protoc-gen-go protoc-gen-go-grpc
 
 # clone the repo
 git clone https://github.com/go-skynet/LocalAI.git
@@ -140,11 +154,11 @@ cd LocalAI
 # build the binary
 make build
 
-# Download gpt4all-j to models/
-wget https://gpt4all.io/models/ggml-gpt4all-j.bin -O models/ggml-gpt4all-j
+# Download phi-2 to models/
+wget https://huggingface.co/TheBloke/phi-2-GGUF/resolve/main/phi-2.Q2_K.gguf -O models/phi-2.Q2_K
 
 # Use a template from the examples
-cp -rf prompt-templates/ggml-gpt4all-j.tmpl models/
+cp -rf prompt-templates/ggml-gpt4all-j.tmpl models/phi-2.Q2_K.tmpl
 
 # Run LocalAI
 ./local-ai --models-path=./models/ --debug=true
@@ -153,17 +167,29 @@ cp -rf prompt-templates/ggml-gpt4all-j.tmpl models/
 curl http://localhost:8080/v1/models
 
 curl http://localhost:8080/v1/chat/completions -H "Content-Type: application/json" -d '{
-     "model": "ggml-gpt4all-j",
+     "model": "phi-2.Q2_K",
      "messages": [{"role": "user", "content": "How are you?"}],
      "temperature": 0.9 
    }'
 ```
 
-#### Troublshooting mac
+#### Troubleshooting mac
 
-If you encounter errors regarding a missing utility metal, install `Xcode` from the App Store.
-If completions are slow, ensure that `gpu-layers` in your model yaml matches the number of layers from the model in use (or simply use a high number such as 256).
-If you a get a compile error: `error: only virtual member functions can be marked 'final'`, reinstall all the necessary brew packages, clean the build, and try again.
+- If you encounter errors regarding a missing utility metal, install `Xcode` from the App Store.
+
+- After the installation of Xcode, if you receive a xcrun error `'xcrun: error: unable to find utility "metal", not a developer tool or in PATH'`. You might have installed the Xcode command line tools before installing Xcode, the former one is pointing to an incomplete SDK.
+
+```
+# print /Library/Developer/CommandLineTools, if command line tools were installed in advance
+xcode-select --print-path
+
+# point to a complete SDK
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+```
+
+- If completions are slow, ensure that `gpu-layers` in your model yaml matches the number of layers from the model in use (or simply use a high number such as 256).
+
+- If you a get a compile error: `error: only virtual member functions can be marked 'final'`, reinstall all the necessary brew packages, clean the build, and try again.
 
 ```
 # reinstall build dependencies

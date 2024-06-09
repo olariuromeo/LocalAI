@@ -53,12 +53,12 @@ func (e *embedBackend) TTS(ctx context.Context, in *pb.TTSRequest, opts ...grpc.
 	return e.s.TTS(ctx, in)
 }
 
-func (e *embedBackend) AudioTranscription(ctx context.Context, in *pb.TranscriptRequest, opts ...grpc.CallOption) (*schema.Result, error) {
+func (e *embedBackend) AudioTranscription(ctx context.Context, in *pb.TranscriptRequest, opts ...grpc.CallOption) (*schema.TranscriptionResult, error) {
 	r, err := e.s.AudioTranscription(ctx, in)
 	if err != nil {
 		return nil, err
 	}
-	tr := &schema.Result{}
+	tr := &schema.TranscriptionResult{}
 	for _, s := range r.Segments {
 		var tks []int
 		for _, t := range s.Tokens {
@@ -99,6 +99,10 @@ func (e *embedBackend) StoresGet(ctx context.Context, in *pb.StoresGetOptions, o
 
 func (e *embedBackend) StoresFind(ctx context.Context, in *pb.StoresFindOptions, opts ...grpc.CallOption) (*pb.StoresFindResult, error) {
 	return e.s.StoresFind(ctx, in)
+}
+
+func (e *embedBackend) Rerank(ctx context.Context, in *pb.RerankRequest, opts ...grpc.CallOption) (*pb.RerankResult, error) {
+	return e.s.Rerank(ctx, in)
 }
 
 type embedBackendServerStream struct {

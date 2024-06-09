@@ -29,7 +29,16 @@ func generateUniqueFileName(dir, baseName, ext string) string {
 	}
 }
 
-func ModelTTS(backend, text, modelFile, voice string, loader *model.ModelLoader, appConfig *config.ApplicationConfig, backendConfig config.BackendConfig) (string, *proto.Result, error) {
+func ModelTTS(
+	backend,
+	text,
+	modelFile,
+	voice ,
+	language string,
+	loader *model.ModelLoader,
+	appConfig *config.ApplicationConfig,
+	backendConfig config.BackendConfig,
+) (string, *proto.Result, error) {
 	bb := backend
 	if bb == "" {
 		bb = model.PiperBackend
@@ -53,7 +62,7 @@ func ModelTTS(backend, text, modelFile, voice string, loader *model.ModelLoader,
 		return "", nil, fmt.Errorf("could not load piper model")
 	}
 
-	if err := os.MkdirAll(appConfig.AudioDir, 0755); err != nil {
+	if err := os.MkdirAll(appConfig.AudioDir, 0750); err != nil {
 		return "", nil, fmt.Errorf("failed creating audio directory: %s", err)
 	}
 
@@ -83,7 +92,13 @@ func ModelTTS(backend, text, modelFile, voice string, loader *model.ModelLoader,
 		Model: modelPath,
 		Voice: voice,
 		Dst:   filePath,
+		Language: &language,
 	})
+
+	// return RPC error if any
+	if !res.Success {
+		return "", nil, fmt.Errorf(res.Message)
+	}
 
 	return filePath, res, err
 }

@@ -3,34 +3,37 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/go-skynet/LocalAI/core/config"
 	"github.com/go-skynet/LocalAI/pkg/gallery"
+	"github.com/go-skynet/LocalAI/pkg/startup"
 	"github.com/go-skynet/LocalAI/pkg/utils"
 	"gopkg.in/yaml.v2"
 )
 
 type GalleryService struct {
-	modelPath string
+	appConfig *config.ApplicationConfig
 	sync.Mutex
 	C        chan gallery.GalleryOp
 	statuses map[string]*gallery.GalleryOpStatus
 }
 
-func NewGalleryService(modelPath string) *GalleryService {
+func NewGalleryService(appConfig *config.ApplicationConfig) *GalleryService {
 	return &GalleryService{
-		modelPath: modelPath,
+		appConfig: appConfig,
 		C:         make(chan gallery.GalleryOp),
 		statuses:  make(map[string]*gallery.GalleryOpStatus),
 	}
 }
 
-func prepareModel(modelPath string, req gallery.GalleryModel, cl *config.BackendConfigLoader, downloadStatus func(string, string, string, float64)) error {
+func prepareModel(modelPath string, req gallery.GalleryModel, downloadStatus func(string, string, string, float64)) error {
 
-	config, err := gallery.GetGalleryConfigFromURL(req.URL)
+	config, err := gallery.GetGalleryConfigFromURL(req.URL, modelPath)
 	if err != nil {
 		return err
 	}
@@ -72,8 +75,15 @@ func (g *GalleryService) Start(c context.Context, cl *config.BackendConfigLoader
 				g.UpdateStatus(op.Id, &gallery.GalleryOpStatus{Message: "processing", Progress: 0})
 
 				// updates the status with an error
-				updateError := func(e error) {
-					g.UpdateStatus(op.Id, &gallery.GalleryOpStatus{Error: e, Processed: true, Message: "error: " + e.Error()})
+				var updateError func(e error)
+				if !g.appConfig.OpaqueErrors {
+					updateError = func(e error) {
+						g.UpdateStatus(op.Id, &gallery.GalleryOpStatus{Error: e, Processed: true, Message: "error: " + e.Error()})
+					}
+				} else {
+					updateError = func(_ error) {
+						g.UpdateStatus(op.Id, &gallery.GalleryOpStatus{Error: fmt.Errorf("an error occurred"), Processed: true})
+					}
 				}
 
 				// displayDownload displays the download progress
@@ -83,15 +93,47 @@ func (g *GalleryService) Start(c context.Context, cl *config.BackendConfigLoader
 				}
 
 				var err error
-				// if the request contains a gallery name, we apply the gallery from the gallery list
-				if op.GalleryName != "" {
-					if strings.Contains(op.GalleryName, "@") {
-						err = gallery.InstallModelFromGallery(op.Galleries, op.GalleryName, g.modelPath, op.Req, progressCallback)
-					} else {
-						err = gallery.InstallModelFromGalleryByName(op.Galleries, op.GalleryName, g.modelPath, op.Req, progressCallback)
+
+				// delete a model
+				if op.Delete {
+					modelConfig := &config.BackendConfig{}
+					// Galleryname is the name of the model in this case
+					dat, err := os.ReadFile(filepath.Join(g.appConfig.ModelPath, op.GalleryModelName+".yaml"))
+					if err != nil {
+						updateError(err)
+						continue
 					}
+					err = yaml.Unmarshal(dat, modelConfig)
+					if err != nil {
+						updateError(err)
+						continue
+					}
+
+					files := []string{}
+					// Remove the model from the config
+					if modelConfig.Model != "" {
+						files = append(files, modelConfig.ModelFileName())
+					}
+
+					if modelConfig.MMProj != "" {
+						files = append(files, modelConfig.MMProjFileName())
+					}
+
+					err = gallery.DeleteModelFromSystem(g.appConfig.ModelPath, op.GalleryModelName, files)
 				} else {
-					err = prepareModel(g.modelPath, op.Req, cl, progressCallback)
+					// if the request contains a gallery name, we apply the gallery from the gallery list
+					if op.GalleryModelName != "" {
+						if strings.Contains(op.GalleryModelName, "@") {
+							err = gallery.InstallModelFromGallery(op.Galleries, op.GalleryModelName, g.appConfig.ModelPath, op.Req, progressCallback)
+						} else {
+							err = gallery.InstallModelFromGalleryByName(op.Galleries, op.GalleryModelName, g.appConfig.ModelPath, op.Req, progressCallback)
+						}
+					} else if op.ConfigURL != "" {
+						startup.PreloadModelsConfigurations(op.ConfigURL, g.appConfig.ModelPath, op.ConfigURL)
+						err = cl.Preload(g.appConfig.ModelPath)
+					} else {
+						err = prepareModel(g.appConfig.ModelPath, op.Req, progressCallback)
+					}
 				}
 
 				if err != nil {
@@ -100,19 +142,25 @@ func (g *GalleryService) Start(c context.Context, cl *config.BackendConfigLoader
 				}
 
 				// Reload models
-				err = cl.LoadBackendConfigsFromPath(g.modelPath)
+				err = cl.LoadBackendConfigsFromPath(g.appConfig.ModelPath)
 				if err != nil {
 					updateError(err)
 					continue
 				}
 
-				err = cl.Preload(g.modelPath)
+				err = cl.Preload(g.appConfig.ModelPath)
 				if err != nil {
 					updateError(err)
 					continue
 				}
 
-				g.UpdateStatus(op.Id, &gallery.GalleryOpStatus{Processed: true, Message: "completed", Progress: 100})
+				g.UpdateStatus(op.Id,
+					&gallery.GalleryOpStatus{
+						Deletion:         op.Delete,
+						Processed:        true,
+						GalleryModelName: op.GalleryModelName,
+						Message:          "completed",
+						Progress:         100})
 			}
 		}
 	}()
@@ -123,12 +171,13 @@ type galleryModel struct {
 	ID                   string           `json:"id"`
 }
 
-func processRequests(modelPath, s string, cm *config.BackendConfigLoader, galleries []gallery.Gallery, requests []galleryModel) error {
+func processRequests(modelPath string, galleries []gallery.Gallery, requests []galleryModel) error {
 	var err error
 	for _, r := range requests {
 		utils.ResetDownloadTimers()
 		if r.ID == "" {
-			err = prepareModel(modelPath, r.GalleryModel, cm, utils.DisplayDownloadFunction)
+			err = prepareModel(modelPath, r.GalleryModel, utils.DisplayDownloadFunction)
+
 		} else {
 			if strings.Contains(r.ID, "@") {
 				err = gallery.InstallModelFromGallery(
@@ -142,7 +191,7 @@ func processRequests(modelPath, s string, cm *config.BackendConfigLoader, galler
 	return err
 }
 
-func ApplyGalleryFromFile(modelPath, s string, cl *config.BackendConfigLoader, galleries []gallery.Gallery) error {
+func ApplyGalleryFromFile(modelPath, s string, galleries []gallery.Gallery) error {
 	dat, err := os.ReadFile(s)
 	if err != nil {
 		return err
@@ -153,15 +202,15 @@ func ApplyGalleryFromFile(modelPath, s string, cl *config.BackendConfigLoader, g
 		return err
 	}
 
-	return processRequests(modelPath, s, cl, galleries, requests)
+	return processRequests(modelPath, galleries, requests)
 }
 
-func ApplyGalleryFromString(modelPath, s string, cl *config.BackendConfigLoader, galleries []gallery.Gallery) error {
+func ApplyGalleryFromString(modelPath, s string, galleries []gallery.Gallery) error {
 	var requests []galleryModel
 	err := json.Unmarshal([]byte(s), &requests)
 	if err != nil {
 		return err
 	}
 
-	return processRequests(modelPath, s, cl, galleries, requests)
+	return processRequests(modelPath, galleries, requests)
 }

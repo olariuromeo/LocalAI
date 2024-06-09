@@ -36,7 +36,7 @@ var _ = Describe("Integration tests for the stores backend(s) and internal APIs"
 			tmpdir, err = os.MkdirTemp("", "")
 			Expect(err).ToNot(HaveOccurred())
 			backendAssetsDir := filepath.Join(tmpdir, "backend-assets")
-			err = os.Mkdir(backendAssetsDir, 0755)
+			err = os.Mkdir(backendAssetsDir, 0750)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = assets.ExtractFiles(backendAssets, backendAssetsDir)
@@ -63,8 +63,9 @@ var _ = Describe("Integration tests for the stores backend(s) and internal APIs"
 		})
 
 		AfterEach(func() {
-			sl.StopAllGRPC()
-			err := os.RemoveAll(tmpdir)
+			err := sl.StopAllGRPC()
+			Expect(err).ToNot(HaveOccurred())
+			err = os.RemoveAll(tmpdir)
 			Expect(err).ToNot(HaveOccurred())
 		})
 

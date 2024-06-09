@@ -7,7 +7,8 @@ import (
 
 	"github.com/go-skynet/LocalAI/core/config"
 	pb "github.com/go-skynet/LocalAI/pkg/grpc/proto"
-	model "github.com/go-skynet/LocalAI/pkg/model"
+	"github.com/go-skynet/LocalAI/pkg/model"
+	"github.com/rs/zerolog/log"
 )
 
 func modelOpts(c config.BackendConfig, so *config.ApplicationConfig, opts []model.Option) []model.Option {
@@ -74,7 +75,10 @@ func gRPCModelOpts(c config.BackendConfig) *pb.ModelOptions {
 		EnforceEager:         c.EnforceEager,
 		SwapSpace:            int32(c.SwapSpace),
 		MaxModelLen:          int32(c.MaxModelLen),
+		TensorParallelSize:   int32(c.TensorParallelSize),
 		MMProj:               c.MMProj,
+		FlashAttention:       c.FlashAttention,
+		NoKVOffload:          c.NoKVOffloading,
 		YarnExtFactor:        c.YarnExtFactor,
 		YarnAttnFactor:       c.YarnAttnFactor,
 		YarnBetaFast:         c.YarnBetaFast,
@@ -108,8 +112,12 @@ func gRPCPredictOpts(c config.BackendConfig, modelPath string) *pb.PredictOption
 	promptCachePath := ""
 	if c.PromptCachePath != "" {
 		p := filepath.Join(modelPath, c.PromptCachePath)
-		os.MkdirAll(filepath.Dir(p), 0755)
-		promptCachePath = p
+		err := os.MkdirAll(filepath.Dir(p), 0750)
+		if err == nil {
+			promptCachePath = p
+		} else {
+			log.Error().Err(err).Str("promptCachePath", promptCachePath).Msg("error creating prompt cache folder")
+		}
 	}
 
 	return &pb.PredictOptions{

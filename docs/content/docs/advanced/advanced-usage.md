@@ -351,7 +351,7 @@ For example, to start vllm manually after compiling LocalAI (also assuming runni
 ./local-ai --external-grpc-backends "vllm:$PWD/backend/python/vllm/run.sh"
 ```
 
-Note that first is is necessary to create the conda environment with:
+Note that first is is necessary to create the environment with:
 
 ```bash
 make -C backend/python/vllm
@@ -369,7 +369,9 @@ there are additional environment variables available that modify the behavior of
 | `BUILD_TYPE`               |         | Build type. Available: `cublas`, `openblas`, `clblas`                                                      |
 | `GO_TAGS`                  |         | Go tags. Available: `stablediffusion`                                                                      |
 | `HUGGINGFACEHUB_API_TOKEN` |         | Special token for interacting with HuggingFace Inference API, required only when using the `langchain-huggingface` backend |
-| `EXTRA_BACKENDS`          |         | A space separated list of backends to prepare. For example `EXTRA_BACKENDS="backend/python/diffusers backend/python/transformers"` prepares the conda environment on start |
+| `EXTRA_BACKENDS`          |         | A space separated list of backends to prepare. For example `EXTRA_BACKENDS="backend/python/diffusers backend/python/transformers"` prepares the python environment on start |
+| `DISABLE_AUTODETECT`       | `false` | Disable autodetect of CPU flagset on start                                                                     |
+| `LLAMACPP_GRPC_SERVERS`   |         | A list of llama.cpp workers to distribute the workload. For example `LLAMACPP_GRPC_SERVERS="address1:port,address2:port"` |
 
 Here is how to configure these variables:
 
@@ -382,35 +384,87 @@ docker run --env-file .env localai
 
 ### CLI parameters
 
-You can control LocalAI with command line arguments, to specify a binding address, or the number of threads.
+You can control LocalAI with command line arguments, to specify a binding address, or the number of threads. Any command line parameter can be specified via an environment variable.
 
+In the help text below, BASEPATH is the location that local-ai is being executed from
 
-| Parameter                      | Environmental Variable          | Default Variable                                   | Description                                                         |
-| ------------------------------ | ------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------- |
-| --f16                          | $F16                            | false                                              | Enable f16 mode                                                     |
-| --debug                        | $DEBUG                          | false                                              | Enable debug mode                                                   |
-| --cors                         | $CORS                           | false                                              | Enable CORS support                                                 |
-| --cors-allow-origins value     | $CORS_ALLOW_ORIGINS             |                                                    | Specify origins allowed for CORS                                     |
-| --threads value                | $THREADS                        | 4    | Number of threads to use for parallel computation                    |
-| --models-path value            | $MODELS_PATH                    | ./models       | Path to the directory containing models used for inferencing        |
-| --preload-models value         | $PRELOAD_MODELS                 |           | List of models to preload in JSON format at startup                  |
-| --preload-models-config value  | $PRELOAD_MODELS_CONFIG          |  | A config with a list of models to apply at startup. Specify the path to a YAML config file |
-| --config-file value            | $CONFIG_FILE                    |                                         | Path to the config file                                             |
-| --address value                | $ADDRESS                        | :8080                    | Specify the bind address for the API server                         |
-| --image-path value             | $IMAGE_PATH                     |                                     | Path to the directory used to store generated images                             |
-| --context-size value           | $CONTEXT_SIZE                   | 512                 | Default context size of the model                                   |
-| --upload-limit value           | $UPLOAD_LIMIT                   | 15                         | Default upload limit in megabytes (audio file upload)                                  |
-| --galleries                    | $GALLERIES                      |                                                    | Allows to set galleries from command line                           |
-|--parallel-requests              | $PARALLEL_REQUESTS     |   false |            Enable backends to handle multiple requests in parallel. This is for backends that supports multiple requests in parallel, like llama.cpp or vllm |
-| --single-active-backend   | $SINGLE_ACTIVE_BACKEND |  false |    Allow only one backend to be running |
-| --api-keys value |   $API_KEY | empty |  List of API Keys to enable API authentication. When this is set, all the requests must be authenticated with one of these API keys.
-| --enable-watchdog-idle | $WATCHDOG_IDLE | false | Enable watchdog for stopping idle backends. This will stop the backends if are in idle state for too long. (default: false) [$WATCHDOG_IDLE]
-| --enable-watchdog-busy   |     $WATCHDOG_BUSY | false |         Enable watchdog for stopping busy backends that exceed a defined threshold.|
-| --watchdog-busy-timeout value | $WATCHDOG_BUSY_TIMEOUT | 5m | Watchdog timeout. This will restart the backend if it crashes.  |
-| --watchdog-idle-timeout value | $WATCHDOG_IDLE_TIMEOUT | 15m | Watchdog idle timeout. This will restart the backend if it crashes. |
-| --preload-backend-only | $PRELOAD_BACKEND_ONLY | false | If set, the api is NOT launched, and only the preloaded models / backends are started. This is intended for multi-node setups. |
-| --external-grpc-backends | EXTERNAL_GRPC_BACKENDS | none | Comma separated list of external gRPC backends to use. Format: `name:host:port` or `name:/path/to/file` |
+#### Global Flags
+| Parameter | Default | Description | Environment Variable |
+|-----------|---------|-------------|----------------------|
+|  -h, --help |  | Show context-sensitive help. |
+| --log-level | info | Set the level of logs to output [error,warn,info,debug] | $LOCALAI_LOG_LEVEL |
 
+#### Storage Flags
+| Parameter | Default | Description | Environment Variable |
+|-----------|---------|-------------|----------------------|
+| --models-path | BASEPATH/models | Path containing models used for inferencing  | $LOCALAI_MODELS_PATH |
+| --backend-assets-path |/tmp/localai/backend_data | Path used to extract libraries that are required by some of the backends in runtime | $LOCALAI_BACKEND_ASSETS_PATH |
+| --image-path | /tmp/generated/images | Location for images generated by backends (e.g. stablediffusion) | $LOCALAI_IMAGE_PATH |
+| --audio-path | /tmp/generated/audio | Location for audio generated by backends (e.g. piper) | $LOCALAI_AUDIO_PATH |
+| --upload-path | /tmp/localai/upload | Path to store uploads from files api | $LOCALAI_UPLOAD_PATH |
+| --config-path | /tmp/localai/config | | $LOCALAI_CONFIG_PATH |
+| --localai-config-dir | BASEPATH/configuration | Directory for dynamic loading of certain configuration files (currently api_keys.json and external_backends.json) | $LOCALAI_CONFIG_DIR |
+| --localai-config-dir-poll-interval |  | Typically the config path picks up changes automatically, but if your system has broken fsnotify events, set this to a time duration to poll the LocalAI Config Dir (example: 1m) | $LOCALAI_CONFIG_DIR_POLL_INTERVAL |
+| --models-config-file | STRING | YAML file containing a list of model backend configs | $LOCALAI_MODELS_CONFIG_FILE |
+
+#### Models Flags
+| Parameter | Default | Description | Environment Variable |
+|-----------|---------|-------------|----------------------|
+| --galleries | STRING | JSON list of galleries | $LOCALAI_GALLERIES |
+| --autoload-galleries |  | | $LOCALAI_AUTOLOAD_GALLERIES |
+| --remote-library | "https://raw.githubusercontent.com/mudler/LocalAI/master/embedded/model_library.yaml" | A LocalAI remote library URL | $LOCALAI_REMOTE_LIBRARY |
+| --preload-models | STRING | A List of models to apply in JSON at start |$LOCALAI_PRELOAD_MODELS |
+| --models | MODELS,... | A List of model configuration URLs to load | $LOCALAI_MODELS |
+| --preload-models-config | STRING | A List of models to apply at startup. Path to a YAML config file | $LOCALAI_PRELOAD_MODELS_CONFIG |
+
+#### Performance Flags
+| Parameter | Default | Description | Environment Variable |
+|-----------|---------|-------------|----------------------|
+| --f16 |  | Enable GPU acceleration | $LOCALAI_F16 |
+| -t, --threads | 4 | Number of threads used for parallel computation. Usage of the number of physical cores in the system is suggested | $LOCALAI_THREADS |
+| --context-size | 512 | Default context size for models | $LOCALAI_CONTEXT_SIZE |
+
+#### API Flags
+| Parameter | Default | Description | Environment Variable |
+|-----------|---------|-------------|----------------------|
+| --address | ":8080" | Bind address for the API server | $LOCALAI_ADDRESS |
+| --cors |  |  | $LOCALAI_CORS |
+| --cors-allow-origins |  |  | $LOCALAI_CORS_ALLOW_ORIGINS |
+| --upload-limit | 15 | Default upload-limit in MB | $LOCALAI_UPLOAD_LIMIT |
+| --api-keys | API-KEYS,... | List of API Keys to enable API authentication. When this is set, all the requests must be authenticated with one of these API keys | $LOCALAI_API_KEY |
+| --disable-welcome |  | Disable welcome pages | $LOCALAI_DISABLE_WELCOME |
+
+#### Backend Flags
+| Parameter | Default | Description | Environment Variable |
+|-----------|---------|-------------|----------------------|
+| --parallel-requests |  | Enable backends to handle multiple requests in parallel if they support it (e.g.: llama.cpp or vllm) | $LOCALAI_PARALLEL_REQUESTS |
+| --single-active-backend |  | Allow only one backend to be run at a time | $LOCALAI_SINGLE_ACTIVE_BACKEND |
+| --preload-backend-only |  | Do not launch the API services, only the preloaded models / backends are started (useful for multi-node setups) | $LOCALAI_PRELOAD_BACKEND_ONLY |
+| --external-grpc-backends | EXTERNAL-GRPC-BACKENDS,... | A list of external grpc backends | $LOCALAI_EXTERNAL_GRPC_BACKENDS |
+| --enable-watchdog-idle |  | Enable watchdog for stopping backends that are idle longer than the watchdog-idle-timeout | $LOCALAI_WATCHDOG_IDLE |
+| --watchdog-idle-timeout | 15m | Threshold beyond which an idle backend should be stopped | $LOCALAI_WATCHDOG_IDLE_TIMEOUT, $WATCHDOG_IDLE_TIMEOUT |
+| --enable-watchdog-busy |  | Enable watchdog for stopping backends that are busy longer than the watchdog-busy-timeout | $LOCALAI_WATCHDOG_BUSY |
+| --watchdog-busy-timeout | 5m | Threshold beyond which a busy backend should be stopped | $LOCALAI_WATCHDOG_BUSY_TIMEOUT |
+
+### .env files
+
+Any settings being provided by an Environment Variable can also be provided from within .env files.  There are several locations that will be checked for relevant .env files. In order of precedence they are:
+
+- .env within the current directory
+- localai.env within the current directory
+- localai.env within the home directory
+- .config/localai.env within the home directory
+- /etc/localai.env
+
+Environment variables within files earlier in the list will take precedence over environment variables defined in files later in the list.
+
+An example .env file is:
+
+```
+LOCALAI_THREADS=10
+LOCALAI_MODELS_PATH=/mnt/storage/localai/models
+LOCALAI_F16=true
+```
 
 ### Extra backends
 
@@ -421,7 +475,7 @@ If you wish to build a custom container image with extra backends, you can use t
 ```Dockerfile
 FROM quay.io/go-skynet/local-ai:master-ffmpeg-core
 
-RUN PATH=$PATH:/opt/conda/bin make -C backend/python/diffusers
+RUN make -C backend/python/diffusers
 ```
 
 Remember also to set the `EXTERNAL_GRPC_BACKENDS` environment variable (or `--external-grpc-backends` as CLI flag) to point to the backends you are using (`EXTERNAL_GRPC_BACKENDS="backend_name:/path/to/backend"`), for example with diffusers:
@@ -429,7 +483,7 @@ Remember also to set the `EXTERNAL_GRPC_BACKENDS` environment variable (or `--ex
 ```Dockerfile
 FROM quay.io/go-skynet/local-ai:master-ffmpeg-core
 
-RUN PATH=$PATH:/opt/conda/bin make -C backend/python/diffusers
+RUN make -C backend/python/diffusers
 
 ENV EXTERNAL_GRPC_BACKENDS="diffusers:/build/backend/python/diffusers/run.sh"
 ```
@@ -447,3 +501,32 @@ When using the `-core` container image it is possible to prepare the python back
 ```bash
 docker run --env EXTRA_BACKENDS="backend/python/diffusers" quay.io/go-skynet/local-ai:master-ffmpeg-core
 ```
+
+### Concurrent requests
+
+LocalAI supports parallel requests for the backends that supports it. For instance, vLLM and llama.cpp supports parallel requests, and thus LocalAI allows to run multiple requests in parallel. 
+
+In order to enable parallel requests, you have to pass `--parallel-requests` or set the `PARALLEL_REQUEST` to true as environment variable.
+
+A list of the environment variable that tweaks parallelism is the following:
+
+```
+### Python backends GRPC max workers
+### Default number of workers for GRPC Python backends.
+### This actually controls wether a backend can process multiple requests or not.
+# PYTHON_GRPC_MAX_WORKERS=1
+
+### Define the number of parallel LLAMA.cpp workers (Defaults to 1)
+# LLAMACPP_PARALLEL=1
+
+### Enable to run parallel requests
+# LOCALAI_PARALLEL_REQUESTS=true
+```
+
+Note that, for llama.cpp you need to set accordingly `LLAMACPP_PARALLEL` to the number of parallel processes your GPU/CPU can handle. For python-based backends (like vLLM) you can set `PYTHON_GRPC_MAX_WORKERS` to the number of parallel requests.
+
+### Disable CPU flagset auto detection in llama.cpp
+
+LocalAI will automatically discover the CPU flagset available in your host and will use the most optimized version of the backends.
+
+If you want to disable this behavior, you can set `DISABLE_AUTODETECT` to `true` in the environment variables.

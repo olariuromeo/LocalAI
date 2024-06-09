@@ -1,13 +1,17 @@
 package gallery
 
 type GalleryOp struct {
-	Req         GalleryModel
-	Id          string
-	Galleries   []Gallery
-	GalleryName string
+	Id               string
+	GalleryModelName string
+	ConfigURL        string
+	Delete           bool
+
+	Req       GalleryModel
+	Galleries []Gallery
 }
 
 type GalleryOpStatus struct {
+	Deletion           bool    `json:"deletion"` // Deletion is true if the operation is a deletion
 	FileName           string  `json:"file_name"`
 	Error              error   `json:"error"`
 	Processed          bool    `json:"processed"`
@@ -15,4 +19,5 @@ type GalleryOpStatus struct {
 	Progress           float64 `json:"progress"`
 	TotalFileSize      string  `json:"file_size"`
 	DownloadedFileSize string  `json:"downloaded_size"`
+	GalleryModelName   string  `json:"gallery_model_name"`
 }
