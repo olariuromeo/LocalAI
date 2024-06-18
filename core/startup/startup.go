@@ -9,6 +9,7 @@ import (
 	"github.com/go-skynet/LocalAI/core/services"
 	"github.com/go-skynet/LocalAI/internal"
 	"github.com/go-skynet/LocalAI/pkg/assets"
+	"github.com/go-skynet/LocalAI/pkg/library"
 	"github.com/go-skynet/LocalAI/pkg/model"
 	pkgStartup "github.com/go-skynet/LocalAI/pkg/startup"
 	"github.com/go-skynet/LocalAI/pkg/xsysinfo"
@@ -59,8 +60,9 @@ func Startup(opts ...config.AppOption) (*config.BackendConfigLoader, *model.Mode
 		}
 	}
 
-	//
-	pkgStartup.PreloadModelsConfigurations(options.ModelLibraryURL, options.ModelPath, options.ModelsURL...)
+	if err := pkgStartup.InstallModels(options.Galleries, options.ModelLibraryURL, options.ModelPath, nil, options.ModelsURL...); err != nil {
+		log.Error().Err(err).Msg("error installing models")
+	}
 
 	cl := config.NewBackendConfigLoader(options.ModelPath)
 	ml := model.NewModelLoader(options.ModelPath)
@@ -106,6 +108,11 @@ func Startup(opts ...config.AppOption) (*config.BackendConfigLoader, *model.Mode
 		if err != nil {
 			log.Warn().Msgf("Failed extracting backend assets files: %s (might be required for some backends to work properly, like gpt4all)", err)
 		}
+	}
+
+	if options.LibPath != "" {
+		// If there is a lib directory, set LD_LIBRARY_PATH to include it
+		library.LoadExternal(options.LibPath)
 	}
 
 	// turn off any process that was started by GRPC if the context is canceled

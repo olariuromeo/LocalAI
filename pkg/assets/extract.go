@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/go-skynet/LocalAI/pkg/library"
 )
 
 func ResolvePath(dir string, paths ...string) string {
@@ -50,6 +52,11 @@ func ExtractFiles(content embed.FS, extractDir string) error {
 
 		return nil
 	})
+
+	// If there is a lib directory, set LD_LIBRARY_PATH to include it
+	// we might use this mechanism to carry over e.g. Nvidia CUDA libraries
+	// from the embedded FS to the target directory
+	library.LoadExtractedLibs(extractDir)
 
 	return err
 }
