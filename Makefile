@@ -5,7 +5,7 @@ BINARY_NAME=local-ai
 
 # llama.cpp versions
 GOLLAMA_STABLE_VERSION?=2b57a8ae43e4699d3dc5d1496a1ccd42922993be
-CPPLLAMA_VERSION?=a94e6ff8774b7c9f950d9545baf0ce35e8d1ed2f
+CPPLLAMA_VERSION?=37bef8943312d91183ff06d8f1214082a17344a5
 
 # gpt4all version
 GPT4ALL_REPO?=https://github.com/nomic-ai/gpt4all
@@ -315,7 +315,7 @@ build: prepare backend-assets grpcs ## Build the project
 	$(info ${GREEN}I LD_FLAGS: ${YELLOW}$(LD_FLAGS)${RESET})
 ifneq ($(BACKEND_LIBS),)
 	$(MAKE) backend-assets/lib
-	cp -r $(BACKEND_LIBS) backend-assets/lib/
+	cp $(BACKEND_LIBS) backend-assets/lib/
 endif
 	CGO_LDFLAGS="$(CGO_LDFLAGS)" $(GOCMD) build -ldflags "$(LD_FLAGS)" -tags "$(GO_TAGS)" -o $(BINARY_NAME) ./
 
