@@ -54,3 +54,15 @@ docs/static/gallery.html
 
 # backend virtual environments
 **/venv
+
+# ENV
+.env
+
+# TOOL
+.tool-versions
+
+# REQUIREMNTS
+requirements.txt
+
+functions-openai.py
+docker-compose.yaml
