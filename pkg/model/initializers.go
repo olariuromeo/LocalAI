@@ -10,10 +10,11 @@ import (
 	"strings"
 	"time"
 
-	grpc "github.com/go-skynet/LocalAI/pkg/grpc"
-	"github.com/go-skynet/LocalAI/pkg/library"
-	"github.com/go-skynet/LocalAI/pkg/xsysinfo"
 	"github.com/klauspost/cpuid/v2"
+	grpc "github.com/mudler/LocalAI/pkg/grpc"
+	"github.com/mudler/LocalAI/pkg/library"
+	"github.com/mudler/LocalAI/pkg/utils"
+	"github.com/mudler/LocalAI/pkg/xsysinfo"
 	"github.com/phayes/freeport"
 	"github.com/rs/zerolog/log"
 
@@ -309,6 +310,9 @@ func (ml *ModelLoader) grpcModel(backend string, o *Options) func(string, string
 			}
 		} else {
 			grpcProcess := backendPath(o.assetDir, backend)
+			if err := utils.VerifyPath(grpcProcess, o.assetDir); err != nil {
+				return "", fmt.Errorf("grpc process not found in assetdir: %s", err.Error())
+			}
 
 			if autoDetect {
 				// autoDetect GRPC process to start based on system capabilities

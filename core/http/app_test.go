@@ -13,15 +13,15 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/go-skynet/LocalAI/core/config"
-	. "github.com/go-skynet/LocalAI/core/http"
-	"github.com/go-skynet/LocalAI/core/schema"
-	"github.com/go-skynet/LocalAI/core/startup"
+	"github.com/mudler/LocalAI/core/config"
+	. "github.com/mudler/LocalAI/core/http"
+	"github.com/mudler/LocalAI/core/schema"
+	"github.com/mudler/LocalAI/core/startup"
 
-	"github.com/go-skynet/LocalAI/pkg/downloader"
-	"github.com/go-skynet/LocalAI/pkg/gallery"
-	"github.com/go-skynet/LocalAI/pkg/model"
 	"github.com/gofiber/fiber/v2"
+	"github.com/mudler/LocalAI/core/gallery"
+	"github.com/mudler/LocalAI/pkg/downloader"
+	"github.com/mudler/LocalAI/pkg/model"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gopkg.in/yaml.v3"
@@ -74,7 +74,7 @@ func getModelStatus(url string) (response map[string]interface{}) {
 
 func getModels(url string) (response []gallery.GalleryModel) {
 	// TODO: No tests currently seem to exercise file:// urls. Fix?
-	downloader.GetURI(url, "", func(url string, i []byte) error {
+	downloader.DownloadAndUnmarshal(url, "", func(url string, i []byte) error {
 		// Unmarshal YAML data into a struct
 		return json.Unmarshal(i, &response)
 	})
@@ -247,7 +247,7 @@ var _ = Describe("API test", func() {
 			err = os.WriteFile(filepath.Join(modelDir, "gallery_simple.yaml"), out, 0600)
 			Expect(err).ToNot(HaveOccurred())
 
-			galleries := []gallery.Gallery{
+			galleries := []config.Gallery{
 				{
 					Name: "test",
 					URL:  "file://" + filepath.Join(modelDir, "gallery_simple.yaml"),
@@ -603,7 +603,7 @@ var _ = Describe("API test", func() {
 
 			c, cancel = context.WithCancel(context.Background())
 
-			galleries := []gallery.Gallery{
+			galleries := []config.Gallery{
 				{
 					Name: "model-gallery",
 					URL:  "https://raw.githubusercontent.com/go-skynet/model-gallery/main/index.yaml",

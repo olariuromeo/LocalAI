@@ -5,7 +5,7 @@ BINARY_NAME=local-ai
 
 # llama.cpp versions
 GOLLAMA_STABLE_VERSION?=2b57a8ae43e4699d3dc5d1496a1ccd42922993be
-CPPLLAMA_VERSION?=557b653dc9ed91e8c313e87500e0050c775f81b6
+CPPLLAMA_VERSION?=e112b610a1a75cb7fa8351e1a933e2e7a755a5ce
 
 # gpt4all version
 GPT4ALL_REPO?=https://github.com/nomic-ai/gpt4all
@@ -54,7 +54,7 @@ override LD_FLAGS += -X "github.com/go-skynet/LocalAI/internal.Commit=$(shell gi
 
 OPTIONAL_TARGETS?=
 
-OS := $(shell uname -s)
+export OS := $(shell uname -s)
 ARCH := $(shell uname -m)
 GREEN  := $(shell tput -Txterm setaf 2)
 YELLOW := $(shell tput -Txterm setaf 3)
@@ -101,6 +101,10 @@ ifeq ($(BUILD_TYPE),cublas)
 	export LLAMA_CUBLAS=1
 	export WHISPER_CUDA=1
 	CGO_LDFLAGS_WHISPER+=-L$(CUDA_LIBPATH)/stubs/ -lcuda -lcufft
+endif
+
+ifeq ($(BUILD_TYPE),vulkan)
+	CMAKE_ARGS+=-DLLAMA_VULKAN=1
 endif
 
 ifeq ($(BUILD_TYPE),hipblas)
@@ -760,7 +764,7 @@ backend-assets/grpc/llama-cpp-grpc: backend-assets/grpc
 	cp -rf backend/cpp/llama backend/cpp/llama-grpc
 	$(MAKE) -C backend/cpp/llama-grpc purge
 	$(info ${GREEN}I llama-cpp build info:grpc${RESET})
-	CMAKE_ARGS="$(CMAKE_ARGS) -DLLAMA_RPC=ON -DLLAMA_AVX=off -DLLAMA_AVX2=off -DLLAMA_AVX512=off -DLLAMA_FMA=off -DLLAMA_F16C=off" $(MAKE) VARIANT="llama-grpc" build-llama-cpp-grpc-server
+	CMAKE_ARGS="$(CMAKE_ARGS) -DLLAMA_RPC=ON -DLLAMA_AVX=off -DLLAMA_AVX2=off -DLLAMA_AVX512=off -DLLAMA_FMA=off -DLLAMA_F16C=off" TARGET="--target grpc-server --target rpc-server" $(MAKE) VARIANT="llama-grpc" build-llama-cpp-grpc-server
 	cp -rfv backend/cpp/llama-grpc/grpc-server backend-assets/grpc/llama-cpp-grpc
 
 backend-assets/util/llama-cpp-rpc-server: backend-assets/grpc/llama-cpp-grpc

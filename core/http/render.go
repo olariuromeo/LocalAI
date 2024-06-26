@@ -7,10 +7,10 @@ import (
 	"net/http"
 
 	"github.com/Masterminds/sprig/v3"
-	"github.com/go-skynet/LocalAI/core/schema"
 	"github.com/gofiber/fiber/v2"
 	fiberhtml "github.com/gofiber/template/html/v2"
 	"github.com/microcosm-cc/bluemonday"
+	"github.com/mudler/LocalAI/core/schema"
 	"github.com/russross/blackfriday"
 )
 
@@ -21,14 +21,13 @@ func notFoundHandler(c *fiber.Ctx) error {
 	// Check if the request accepts JSON
 	if string(c.Context().Request.Header.ContentType()) == "application/json" || len(c.Accepts("html")) == 0 {
 		// The client expects a JSON response
-		c.Status(fiber.StatusNotFound).JSON(schema.ErrorResponse{
+		return c.Status(fiber.StatusNotFound).JSON(schema.ErrorResponse{
 			Error: &schema.APIError{Message: "Resource not found", Code: fiber.StatusNotFound},
 		})
 	} else {
 		// The client expects an HTML response
-		c.Status(fiber.StatusNotFound).Render("views/404", fiber.Map{})
+		return c.Status(fiber.StatusNotFound).Render("views/404", fiber.Map{})
 	}
-	return nil
 }
 
 func renderEngine() *fiberhtml.Engine {

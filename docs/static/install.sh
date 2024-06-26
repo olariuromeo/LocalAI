@@ -77,8 +77,11 @@ USE_AIO=${USE_AIO:-false}
 API_KEY=${API_KEY:-}
 CORE_IMAGES=${CORE_IMAGES:-false}
 # nprocs -1
-procs=$(nproc)
-procs=$((procs-1))
+if available nproc; then
+    procs=$(nproc)
+else
+    procs=1
+fi
 THREADS=${THREADS:-$procs}
 LATEST_VERSION=$(curl -s "https://api.github.com/repos/mudler/LocalAI/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
 VERSION="${VERSION:-$LATEST_VERSION}"
@@ -227,8 +230,8 @@ install_container_toolkit() {
     case $OS_NAME in
             amzn|fedora|rocky|centos|rhel) install_container_toolkit_yum ;;
             debian|ubuntu) install_container_toolkit_apt ;;
-            opensuse|suse) install_container_toolkit_zypper ;;
-            *) exit ;;
+            opensuse*|suse*) install_container_toolkit_zypper ;;
+            *) echo "Could not install nvidia container toolkit - unknown OS" ;;
     esac
 }
 
@@ -489,7 +492,7 @@ install_binary_darwin() {
     [ "$(uname -s)" = "Darwin" ] || fatal 'This script is intended to run on macOS only.'
 
     info "Downloading local-ai..."
-    curl --fail --show-error --location --progress-bar -o $TEMP_DIR/local-ai "https://github.com/mudler/LocalAI/releases/download/v${VERSION}/local-ai-Darwin-${ARCH}"
+    curl --fail --show-error --location --progress-bar -o $TEMP_DIR/local-ai "https://github.com/mudler/LocalAI/releases/download/${VERSION}/local-ai-Darwin-${ARCH}"
 
     info "Installing local-ai..."
     install -o0 -g0 -m755 $TEMP_DIR/local-ai /usr/local/bin/local-ai
@@ -500,12 +503,6 @@ install_binary_darwin() {
 install_binary() {
     [ "$(uname -s)" = "Linux" ] || fatal 'This script is intended to run on Linux only.'
 
-    ARCH=$(uname -m)
-    case "$ARCH" in
-        x86_64) ARCH="x86_64" ;;
-        aarch64|arm64) ARCH="arm64" ;;
-        *) fatal "Unsupported architecture: $ARCH" ;;
-    esac
 
     IS_WSL2=false
 
@@ -578,6 +575,13 @@ install_binary() {
 
 OS="$(uname -s)"
 
+ARCH=$(uname -m)
+case "$ARCH" in
+    x86_64) ARCH="x86_64" ;;
+    aarch64|arm64) ARCH="arm64" ;;
+    *) fatal "Unsupported architecture: $ARCH" ;;
+esac
+
 if [ "$OS" == "Darwin" ]; then
     install_binary_darwin
     exit 0
@@ -613,7 +617,9 @@ for PACKAGE_MANAGER in dnf yum apt-get; do
 done
 
 if [ "$DOCKER_INSTALL" = "true" ]; then
-    install_container_toolkit
+    if [ "$HAS_CUDA" = true ]; then
+        install_container_toolkit
+    fi
     install_docker
 else
     install_binary

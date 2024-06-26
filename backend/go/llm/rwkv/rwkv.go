@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 
 	"github.com/donomii/go-rwkv.cpp"
-	"github.com/go-skynet/LocalAI/pkg/grpc/base"
-	pb "github.com/go-skynet/LocalAI/pkg/grpc/proto"
+	"github.com/mudler/LocalAI/pkg/grpc/base"
+	pb "github.com/mudler/LocalAI/pkg/grpc/proto"
 )
 
 const tokenizerSuffix = ".tokenizer.json"
@@ -31,7 +31,7 @@ func (llm *LLM) Load(opts *pb.ModelOptions) error {
 	model := rwkv.LoadFiles(opts.ModelFile, tokenizerPath, uint32(opts.GetThreads()))
 
 	if model == nil {
-		return fmt.Errorf("could not load model")
+		return fmt.Errorf("rwkv could not load model")
 	}
 	llm.rwkv = model
 	return nil

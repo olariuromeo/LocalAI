@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 
-	cliContext "github.com/go-skynet/LocalAI/core/cli/context"
+	cliContext "github.com/mudler/LocalAI/core/cli/context"
+	"github.com/mudler/LocalAI/core/config"
 
-	"github.com/go-skynet/LocalAI/pkg/gallery"
-	"github.com/go-skynet/LocalAI/pkg/startup"
+	"github.com/mudler/LocalAI/core/gallery"
+	"github.com/mudler/LocalAI/pkg/downloader"
+	"github.com/mudler/LocalAI/pkg/startup"
 	"github.com/rs/zerolog/log"
 	"github.com/schollz/progressbar/v3"
 )
@@ -33,7 +35,7 @@ type ModelsCMD struct {
 }
 
 func (ml *ModelsList) Run(ctx *cliContext.Context) error {
-	var galleries []gallery.Gallery
+	var galleries []config.Gallery
 	if err := json.Unmarshal([]byte(ml.Galleries), &galleries); err != nil {
 		log.Error().Err(err).Msg("unable to load galleries")
 	}
@@ -53,7 +55,7 @@ func (ml *ModelsList) Run(ctx *cliContext.Context) error {
 }
 
 func (mi *ModelsInstall) Run(ctx *cliContext.Context) error {
-	var galleries []gallery.Gallery
+	var galleries []config.Gallery
 	if err := json.Unmarshal([]byte(mi.Galleries), &galleries); err != nil {
 		log.Error().Err(err).Msg("unable to load galleries")
 	}
@@ -79,13 +81,15 @@ func (mi *ModelsInstall) Run(ctx *cliContext.Context) error {
 			return err
 		}
 
-		model := gallery.FindModel(models, modelName, mi.ModelsPath)
-		if model == nil {
-			log.Error().Str("model", modelName).Msg("model not found")
-			return err
-		}
+		if !downloader.LooksLikeOCI(modelName) {
+			model := gallery.FindModel(models, modelName, mi.ModelsPath)
+			if model == nil {
+				log.Error().Str("model", modelName).Msg("model not found")
+				return err
+			}
 
-		log.Info().Str("model", modelName).Str("license", model.License).Msg("installing model")
+			log.Info().Str("model", modelName).Str("license", model.License).Msg("installing model")
+		}
 		err = startup.InstallModels(galleries, "", mi.ModelsPath, progressCallback, modelName)
 		if err != nil {
 			return err

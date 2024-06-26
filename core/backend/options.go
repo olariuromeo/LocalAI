@@ -5,9 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/go-skynet/LocalAI/core/config"
-	pb "github.com/go-skynet/LocalAI/pkg/grpc/proto"
-	"github.com/go-skynet/LocalAI/pkg/model"
+	"github.com/mudler/LocalAI/core/config"
+	pb "github.com/mudler/LocalAI/pkg/grpc/proto"
+	"github.com/mudler/LocalAI/pkg/model"
 	"github.com/rs/zerolog/log"
 )
 
@@ -142,12 +142,14 @@ func gRPCPredictOpts(c config.BackendConfig, modelPath string) *pb.PredictOption
 		MirostatTAU:         float32(*c.LLMConfig.MirostatTAU),
 		Debug:               *c.Debug,
 		StopPrompts:         c.StopWords,
-		Repeat:              int32(c.RepeatPenalty),
+		Repeat:              int32(c.RepeatLastN),
+		FrequencyPenalty:    float32(c.FrequencyPenalty),
+		PresencePenalty:     float32(c.PresencePenalty),
+		Penalty:             float32(c.RepeatPenalty),
 		NKeep:               int32(c.Keep),
 		Batch:               int32(c.Batch),
 		IgnoreEOS:           c.IgnoreEOS,
 		Seed:                getSeed(c),
-		FrequencyPenalty:    float32(c.FrequencyPenalty),
 		MLock:               *c.MMlock,
 		MMap:                *c.MMap,
 		MainGPU:             c.MainGPU,

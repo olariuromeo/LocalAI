@@ -8,9 +8,9 @@ import (
 	"path"
 	"path/filepath"
 
-	"github.com/go-skynet/LocalAI/core/backend"
-	"github.com/go-skynet/LocalAI/core/config"
-	model "github.com/go-skynet/LocalAI/pkg/model"
+	"github.com/mudler/LocalAI/core/backend"
+	"github.com/mudler/LocalAI/core/config"
+	model "github.com/mudler/LocalAI/pkg/model"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog/log"
@@ -32,7 +32,7 @@ func TranscriptEndpoint(cl *config.BackendConfigLoader, ml *model.ModelLoader, a
 
 		config, input, err := mergeRequestWithConfig(m, input, cl, ml, appConfig.Debug, appConfig.Threads, appConfig.ContextSize, appConfig.F16)
 		if err != nil {
-			return fmt.Errorf("failed reading parameters from request:%w", err)
+			return fmt.Errorf("failed reading parameters from request: %w", err)
 		}
 		// retrieve the file data from the request
 		file, err := c.FormFile("file")
@@ -65,7 +65,7 @@ func TranscriptEndpoint(cl *config.BackendConfigLoader, ml *model.ModelLoader, a
 
 		log.Debug().Msgf("Audio file copied to: %+v", dst)
 
-		tr, err := backend.ModelTranscription(dst, input.Language, ml, *config, appConfig)
+		tr, err := backend.ModelTranscription(dst, input.Language, input.Translate, ml, *config, appConfig)
 		if err != nil {
 			return err
 		}

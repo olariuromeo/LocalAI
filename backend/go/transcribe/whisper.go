@@ -4,9 +4,9 @@ package main
 // It is meant to be used by the main executable that is the server for the specific backend type (falcon, gpt3, etc)
 import (
 	"github.com/ggerganov/whisper.cpp/bindings/go/pkg/whisper"
-	"github.com/go-skynet/LocalAI/core/schema"
-	"github.com/go-skynet/LocalAI/pkg/grpc/base"
-	pb "github.com/go-skynet/LocalAI/pkg/grpc/proto"
+	"github.com/mudler/LocalAI/core/schema"
+	"github.com/mudler/LocalAI/pkg/grpc/base"
+	pb "github.com/mudler/LocalAI/pkg/grpc/proto"
 )
 
 type Whisper struct {
@@ -22,5 +22,5 @@ func (sd *Whisper) Load(opts *pb.ModelOptions) error {
 }
 
 func (sd *Whisper) AudioTranscription(opts *pb.TranscriptRequest) (schema.TranscriptionResult, error) {
-	return Transcript(sd.whisper, opts.Dst, opts.Language, uint(opts.Threads))
+	return Transcript(sd.whisper, opts.Dst, opts.Language, opts.Translate, uint(opts.Threads))
 }

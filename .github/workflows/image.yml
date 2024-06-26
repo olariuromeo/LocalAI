@@ -39,7 +39,7 @@ jobs:
     strategy:
       # Pushing with all jobs in parallel
       # eats the bandwidth of all the nodes
-      max-parallel: ${{ github.event_name != 'pull_request' && 2 || 4 }}
+      max-parallel: ${{ github.event_name != 'pull_request' && 6 || 10 }}
       matrix:
         include:
           # Extra images
@@ -257,6 +257,7 @@ jobs:
       quayUsername: ${{ secrets.LOCALAI_REGISTRY_USERNAME }}
       quayPassword: ${{ secrets.LOCALAI_REGISTRY_PASSWORD }}
     strategy:
+      max-parallel: ${{ github.event_name != 'pull_request' && 2 || 4 }}
       matrix:
         include:
           - build-type: ''
@@ -266,7 +267,7 @@ jobs:
             ffmpeg: 'true'
             image-type: 'core'
             base-image: "ubuntu:22.04"
-            runs-on: 'ubuntu-latest'
+            runs-on: 'arc-runner-set'
             aio: "-aio-cpu"
             latest-image: 'latest-cpu'
             latest-image-aio: 'latest-aio-cpu'
@@ -280,7 +281,7 @@ jobs:
             ffmpeg: ''
             image-type: 'core'
             base-image: "ubuntu:22.04"
-            runs-on: 'ubuntu-latest'
+            runs-on: 'arc-runner-set'
             makeflags: "--jobs=4 --output-sync=target"
           - build-type: 'cublas'
             cuda-major-version: "12"
@@ -291,7 +292,7 @@ jobs:
             ffmpeg: ''
             image-type: 'core'
             base-image: "ubuntu:22.04"
-            runs-on: 'ubuntu-latest'
+            runs-on: 'arc-runner-set'
             makeflags: "--jobs=4 --output-sync=target"
           - build-type: 'cublas'
             cuda-major-version: "11"
@@ -301,7 +302,7 @@ jobs:
             tag-suffix: '-cublas-cuda11-ffmpeg-core'
             ffmpeg: 'true'
             image-type: 'core'
-            runs-on: 'ubuntu-latest'
+            runs-on: 'arc-runner-set'
             base-image: "ubuntu:22.04"
             makeflags: "--jobs=4 --output-sync=target"
           - build-type: 'cublas'
@@ -312,6 +313,15 @@ jobs:
             tag-suffix: '-cublas-cuda12-ffmpeg-core'
             ffmpeg: 'true'
             image-type: 'core'
-            runs-on: 'ubuntu-latest'
+            runs-on: 'arc-runner-set'
+            base-image: "ubuntu:22.04"
+            makeflags: "--jobs=4 --output-sync=target"
+          - build-type: 'vulkan'
+            platforms: 'linux/amd64'
+            tag-latest: 'false'
+            tag-suffix: '-vulkan-ffmpeg-core'
+            ffmpeg: 'true'
+            image-type: 'core'
+            runs-on: 'arc-runner-set'
             base-image: "ubuntu:22.04"
             makeflags: "--jobs=4 --output-sync=target"
